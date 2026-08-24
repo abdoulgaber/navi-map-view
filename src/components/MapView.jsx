@@ -38,6 +38,7 @@ export default function MapView({ filters, search, sort }) {
   const [category,        setCategory]        = useState('Residential')
   const [selectedProject, setSelectedProject] = useState(null)
   const [drawerProject,   setDrawerProject]   = useState(null)
+  const [selectedArea,    setSelectedArea]    = useState(null)
 
   /* Compare mode */
   const [compareMode, setCompareMode] = useState(false)
@@ -58,15 +59,22 @@ export default function MapView({ filters, search, sort }) {
     Commercial:  baseFiltered.filter(CATEGORY_MATCH.Commercial).length,
   }), [baseFiltered])
 
-  const filtered = useMemo(
+  /* Everything in the chosen category — drives the zone badges */
+  const inCategory = useMemo(
     () => sortProjects(baseFiltered.filter(CATEGORY_MATCH[category]), sort),
     [baseFiltered, category, sort],
+  )
+
+  /* Selecting an area narrows the list and the pins to it, Nawy-style */
+  const filtered = useMemo(
+    () => selectedArea ? inCategory.filter(p => p.location === selectedArea) : inCategory,
+    [inCategory, selectedArea],
   )
 
   const zones = useMemo(() =>
     BASE_LOCATIONS
       .map(loc => {
-        const inZone = filtered.filter(p => p.location === loc.area)
+        const inZone = inCategory.filter(p => p.location === loc.area)
         return {
           ...loc,
           count: inZone.length,
@@ -74,7 +82,7 @@ export default function MapView({ filters, search, sort }) {
         }
       })
       .filter(z => z.count > 0),
-    [filtered],
+    [inCategory],
   )
 
   const compareItems = useMemo(
@@ -123,10 +131,30 @@ export default function MapView({ filters, search, sort }) {
       <aside className="list-panel">
         <div className="list-panel-top">
           <CategoryTabs category={category} onChange={setCategory} counts={counts} />
-          <div className="list-count">
-            <strong>{filtered.length.toLocaleString()}</strong>
-            {' '}{category.toLowerCase()} project{filtered.length !== 1 ? 's' : ''} found
-          </div>
+          {selectedArea ? (
+            <div className="area-pill">
+              <span className="area-pill-icon">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M7 1.2c-2.1 0-3.8 1.7-3.8 3.8 0 2.8 3.8 7.8 3.8 7.8s3.8-5 3.8-7.8c0-2.1-1.7-3.8-3.8-3.8Z"
+                    stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                  <circle cx="7" cy="5" r="1.4" fill="currentColor"/>
+                </svg>
+              </span>
+              <span className="area-pill-body">
+                <strong>{selectedArea}</strong>
+                <small>{filtered.length} project{filtered.length !== 1 ? 's' : ''} within this area</small>
+              </span>
+              <button type="button" className="area-pill-clear" onClick={() => setSelectedArea(null)}>
+                unselect area
+              </button>
+            </div>
+          ) : (
+            <div className="list-count">
+              <strong>{filtered.length.toLocaleString()}</strong>
+              {' '}{category.toLowerCase()} project{filtered.length !== 1 ? 's' : ''} found
+              <span className="list-hint"> · tap an area on the map to focus it</span>
+            </div>
+          )}
         </div>
         <div className="list-scroll" ref={listRef}>
           {filtered.length === 0 && (
@@ -155,6 +183,8 @@ export default function MapView({ filters, search, sort }) {
         zones={zones}
         selectedProject={selectedProject}
         onSelectProject={handleProjectClick}
+        selectedArea={selectedArea}
+        onSelectArea={setSelectedArea}
         compareSelection={compareSel}
       >
         <div className="tools-panel">

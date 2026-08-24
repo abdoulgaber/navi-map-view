@@ -8,6 +8,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { zoneAreaFeature } from '../utils/geo.js'
 import { computePlacements, repairOverlaps } from '../utils/placement.js'
+import { getAreaBoundary, boundsOfPoints } from '../utils/boundaries.js'
 
 /**
  * MapCanvas — MapLibre GL map with:
@@ -48,6 +49,35 @@ const INTRO_MS    = 3200
 const PANEL_OFFSET = [224, 0]
 
 const ZONES_SRC = 'zones-src'
+const AREA_SRC  = 'area-src'
+
+/* Fit padding — the floating list panel covers the left edge */
+const FIT_PADDING = { left: 460, top: 70, right: 60, bottom: 90 }
+
+function drawSelectedArea(map, geojson) {
+  const data = { type: 'Feature', properties: {}, geometry: geojson }
+  const src = map.getSource(AREA_SRC)
+  if (src) { src.setData(data); return }
+  map.addSource(AREA_SRC, { type: 'geojson', data })
+  map.addLayer({
+    id: 'area-fill',
+    type: 'fill',
+    source: AREA_SRC,
+    paint: { 'fill-color': '#4C64FF', 'fill-opacity': 0.12 },
+  })
+  map.addLayer({
+    id: 'area-line',
+    type: 'line',
+    source: AREA_SRC,
+    paint: { 'line-color': '#4C64FF', 'line-width': 2.5, 'line-opacity': 0.9 },
+  })
+}
+
+function clearSelectedArea(map) {
+  if (map.getLayer('area-line')) map.removeLayer('area-line')
+  if (map.getLayer('area-fill')) map.removeLayer('area-fill')
+  if (map.getSource(AREA_SRC)) map.removeSource(AREA_SRC)
+}
 
 const shortPrice = (v) =>
   v >= 1_000_000
@@ -103,6 +133,8 @@ export default function MapCanvas({
   zones,
   selectedProject,
   onSelectProject,
+  selectedArea,
+  onSelectArea,
   compareSelection,
   children,
 }) {
@@ -127,7 +159,7 @@ export default function MapCanvas({
   zonesRef.current     = zones
   selectedRef.current  = selectedProject
   compareRef.current   = compareSelection
-  callbacksRef.current = { onSelectProject }
+  callbacksRef.current = { onSelectProject, onSelectArea }
 
   /* ── init map once ─────────────────────────────────────────────────── */
   useEffect(() => {
@@ -373,7 +405,8 @@ export default function MapCanvas({
     const map = mapRef.current
     if (!map || !mapReady) return
 
-    if (map.isStyleLoaded()) drawZoneAreas(map, zones)
+    // the selected area gets its real border drawn instead of the hull
+    if (map.isStyleLoaded()) drawZoneAreas(map, zones.filter(z => z.area !== selectedArea))
 
     zoneMarkers.current.forEach(m => m.remove())
     zoneMarkers.current = []
@@ -383,16 +416,50 @@ export default function MapCanvas({
       el.className = 'zone-badge'
       el.type = 'button'
       el.innerHTML = `<strong>${zone.count}</strong><span>${zone.area}</span>`
-      el.addEventListener('click', () => {
-        map.flyTo({ center: [zone.lng, zone.lat], zoom: ZONE_ZOOM, offset: PANEL_OFFSET, duration: 2000, essential: true })
-      })
+      el.addEventListener('click', () => callbacksRef.current.onSelectArea(zone.area))
       zoneMarkers.current.push(
         new Marker({ element: el }).setLngLat([zone.lng, zone.lat]).addTo(map)
       )
     }
     syncLayers(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zones, mapReady])
+  }, [zones, mapReady, selectedArea])
+
+  /* ── selected area: fit to its real governmental border ────────────── */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+
+    if (!selectedArea) {
+      clearSelectedArea(map)
+      return
+    }
+
+    const zone = zonesRef.current.find(z => z.area === selectedArea)
+    let cancelled = false
+
+    /* 1 — respond immediately using the project hull, so the click never
+           waits on the network … */
+    const fallback = zone ? boundsOfPoints(zone.points ?? []) : null
+    if (fallback) {
+      map.fitBounds(fallback, { padding: FIT_PADDING, duration: 1200, maxZoom: 14, essential: true })
+    }
+
+    /* 2 — … then upgrade to the actual administrative boundary. */
+    getAreaBoundary(selectedArea).then(boundary => {
+      if (cancelled || !mapRef.current || !boundary) return
+      drawSelectedArea(map, boundary.geojson)
+      map.fitBounds(boundary.bounds, {
+        padding: FIT_PADDING,
+        duration: 1400,
+        maxZoom: 14,
+        essential: true,
+      })
+    })
+
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedArea, mapReady])
 
   /* ── refresh pins when the filtered project set changes ────────────── */
   useEffect(() => {

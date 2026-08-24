@@ -353,6 +353,42 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   font-weight: 500;
   color: var(--gray-500);
 }
+.list-hint { color: var(--gray-400); font-weight: 400; }
+
+/* ── "Within this area" pill (shown while an area is focused) ── */
+.area-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--primary-light);
+  background: var(--primary-light);
+  border-radius: 10px;
+}
+.area-pill-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.area-pill-body { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.area-pill-body strong { font-size: 13px; font-weight: 700; color: var(--gray-900); }
+.area-pill-body small  { font-size: 11px; font-weight: 500; color: var(--gray-600); }
+.area-pill-clear {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: underline;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.area-pill-clear:hover { color: var(--gray-900); }
 
 .list-scroll {
   flex: 1;

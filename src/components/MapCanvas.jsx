@@ -186,6 +186,8 @@ export default function MapCanvas({
       attributionControl: { compact: true },
     })
     mapRef.current = map
+    // Support handle: lets us inspect layers/camera on a live deployment
+    if (typeof window !== 'undefined') window.__naviMap = map
 
     /* Markers/layers only need the STYLE, not every tile — gating on 'load'
        would leave the map empty whenever tiles are slow to arrive. */

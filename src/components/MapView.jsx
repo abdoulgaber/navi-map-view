@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useCallback } from 'react'
 import { projects, BASE_LOCATIONS } from '../data/projects.js'
 import { applyFilters } from './FilterBar.jsx'
+import { sortProjects } from './ControlsBar.jsx'
 import ProjectCard from './ProjectCard.jsx'
 import ProjectDrawer from './ProjectDrawer.jsx'
 import CompareBar from './CompareBar.jsx'
@@ -13,41 +14,40 @@ const CATEGORY_MATCH = {
   Commercial:  (p) => p.type === 'Commercial'  || p.type === 'Mixed',
 }
 
-function SearchBar({ value, onChange }) {
+/** Residential ⇄ Commercial segmented tabs (NAVI hand-off style) */
+function CategoryTabs({ category, onChange, counts }) {
   return (
-    <div className="search-bar">
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <path d="M16.5 16.5L12.875 12.875M14.833 8.167A6.667 6.667 0 1 1 1.5 8.167a6.667 6.667 0 0 1 13.333 0Z"
-          stroke="#475467" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-      <input
-        type="text"
-        placeholder="Search by project, developer, or location…"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="search-input"
-      />
-      {value && (
-        <button className="search-clear" onClick={() => onChange('')}>✕</button>
-      )}
+    <div className="ctabs">
+      {['Residential', 'Commercial'].map(c => (
+        <button
+          key={c}
+          type="button"
+          className={`ctab${category === c ? ' ctab--active' : ''}`}
+          onClick={() => onChange(c)}
+        >
+          {c}
+          {c === 'Commercial' && <sup className="ctab-new">New</sup>}
+          <span className="ctab-count">{counts[c]}</span>
+        </button>
+      ))}
     </div>
   )
 }
 
-export default function MapView({ filters, search, onSearchChange }) {
+export default function MapView({ filters, search, sort }) {
   const [category,        setCategory]        = useState('Residential')
   const [selectedProject, setSelectedProject] = useState(null)
   const [drawerProject,   setDrawerProject]   = useState(null)
 
   /* Compare mode */
   const [compareMode, setCompareMode] = useState(false)
-  const [compareSel,  setCompareSel]  = useState([])       // project ids
+  const [compareSel,  setCompareSel]  = useState([])
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareMax,  setCompareMax]  = useState(false)
 
   const listRef = useRef(null)
 
-  /* ── filtering pipeline: filters+search → category ─────────────────── */
+  /* ── pipeline: filters+search → category → sort ────────────────────── */
   const baseFiltered = useMemo(
     () => applyFilters(projects, search, filters),
     [search, filters],
@@ -59,8 +59,8 @@ export default function MapView({ filters, search, onSearchChange }) {
   }), [baseFiltered])
 
   const filtered = useMemo(
-    () => baseFiltered.filter(CATEGORY_MATCH[category]),
-    [baseFiltered, category],
+    () => sortProjects(baseFiltered.filter(CATEGORY_MATCH[category]), sort),
+    [baseFiltered, category, sort],
   )
 
   const zones = useMemo(() =>
@@ -115,7 +115,7 @@ export default function MapView({ filters, search, onSearchChange }) {
       {/* Left panel */}
       <aside className="list-panel">
         <div className="list-panel-top">
-          <SearchBar value={search} onChange={onSearchChange} />
+          <CategoryTabs category={category} onChange={setCategory} counts={counts} />
           <div className="list-count">
             <strong>{filtered.length.toLocaleString()}</strong>
             {' '}{category.toLowerCase()} project{filtered.length !== 1 ? 's' : ''} found
@@ -130,7 +130,7 @@ export default function MapView({ filters, search, onSearchChange }) {
             </div>
           )}
           {filtered.map(project => (
-            <div key={project.id} data-id={project.id}>
+            <div key={project.id} data-id={project.id} className="pcard-slot">
               <ProjectCard
                 project={project}
                 active={selectedProject?.id === project.id}
@@ -146,14 +146,10 @@ export default function MapView({ filters, search, onSearchChange }) {
       <MapCanvas
         projects={filtered}
         zones={zones}
-        category={category}
-        onCategoryChange={setCategory}
-        counts={counts}
         selectedProject={selectedProject}
         onSelectProject={handleProjectClick}
         compareSelection={compareSel}
       >
-        {/* Tools (top-left) */}
         <div className="tools-panel">
           <button
             type="button"

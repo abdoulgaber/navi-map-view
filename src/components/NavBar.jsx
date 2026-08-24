@@ -1,10 +1,10 @@
 export default function NavBar() {
   const navItems = [
     { label: 'Project Availability' },
-    { label: 'Maps', active: true },
-    { label: 'Launches & Offers' },
-    { label: 'Units Comparison' },
-    { label: 'Units AI', suffix: '– Coming soon' },
+    { label: 'Maps', active: true, tag: 'New' },
+    { label: 'Launches & Offers section' },
+    { label: 'Units comparison' },
+    { label: 'Units AI', suffix: '“Coming soon”', muted: true },
   ]
 
   return (
@@ -19,10 +19,11 @@ export default function NavBar() {
           <a
             key={item.label}
             href="#"
-            className={`nav-link${item.active ? ' nav-link--active' : ''}`}
+            className={`nav-link${item.active ? ' nav-link--active' : ''}${item.muted ? ' nav-link--muted' : ''}`}
           >
             {item.label}
             {item.suffix && <span className="nav-link-suffix"> {item.suffix}</span>}
+            {item.tag && <sup className="nav-new-tag">{item.tag}</sup>}
           </a>
         ))}
       </nav>
@@ -30,7 +31,8 @@ export default function NavBar() {
       <div className="navbar-actions">
         <button className="btn-back-crm">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M13 8H3M3 8L7 4M3 8L7 12" stroke="#4C64FF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M6.5 3.5L3 7L6.5 10.5M3 7H10C11.6569 7 13 8.34315 13 10V12.5"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           Back to CRM
         </button>

@@ -4,16 +4,23 @@
   --primary-light: #E8EBFF;
   --gray-900:      #101828;
   --gray-800:      #1D2939;
-  --gray-600:      #344054;
-  --gray-500:      #475467;
-  --gray-400:      #667085;
+  --gray-700:      #344054;
+  --gray-600:      #475467;
+  --gray-500:      #667085;
+  --gray-400:      #98A2B3;
   --gray-300:      #D0D5DD;
+  --gray-200:      #EAECF0;
   --gray-100:      #F2F4F7;
   --gray-50:       #F9FAFB;
   --white:         #FFFFFF;
   --border:        #EAECF0;
+  --orange:        #FF6006;
+  --pink:          #EF476F;
   --success:       #079455;
   --warning:       #FD853A;
+
+  --shadow-sm: 0 1px 3px rgba(16,24,40,0.1), 0 1px 2px rgba(16,24,40,0.06);
+  --shadow-lg: 0 12px 32px rgba(16,24,40,0.18);
 
   --font:          'Montserrat', sans-serif;
   --navbar-h:      70px;
@@ -84,9 +91,18 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 .nav-link--active {
   color: var(--gray-900);
   font-weight: 600;
-  background: var(--gray-50);
 }
+.nav-link--muted, .nav-link--muted:hover { color: var(--gray-400); background: none; }
 .nav-link-suffix { color: var(--gray-400); font-weight: 400; }
+
+.nav-new-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--orange);
+  margin-left: 3px;
+  vertical-align: super;
+  line-height: 1;
+}
 
 .navbar-actions {
   display: flex;
@@ -97,17 +113,16 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 .btn-back-crm {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
+  gap: 8px;
+  padding: 10px 12px;
   font-size: 14px;
   font-weight: 600;
   color: var(--primary);
-  border: 1px solid var(--primary-light);
   border-radius: 8px;
-  background: var(--primary-light);
-  transition: opacity 0.15s;
+  background: none;
+  transition: background 0.15s;
 }
-.btn-back-crm:hover { opacity: 0.8; }
+.btn-back-crm:hover { background: var(--primary-light); }
 
 .navbar-avatar {
   width: 40px;
@@ -336,78 +351,220 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--gray-300) transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
 }
 .list-scroll::-webkit-scrollbar { width: 4px; }
 .list-scroll::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 2px; }
 
-/* ─── Search bar ──────────────────────────────────────────────────────────── */
-.search-bar {
+/* ─── Controls row (search + sort + filters) ──────────────────────────────── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 32px;
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.controls-search {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  background: var(--gray-50);
   border: 1px solid var(--gray-300);
   border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--white);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.search-input {
+.controls-search:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+.controls-search input {
   flex: 1;
   font-size: 14px;
+  font-weight: 500;
   color: var(--gray-900);
 }
-.search-input::placeholder { color: var(--gray-400); }
-.search-clear {
-  font-size: 12px;
-  color: var(--gray-400);
-  line-height: 1;
-}
-.search-clear:hover { color: var(--gray-600); }
+.controls-search input::placeholder { color: var(--gray-500); font-weight: 400; }
+.controls-search-clear { font-size: 13px; color: var(--gray-500); line-height: 1; }
+.controls-search-clear:hover { color: var(--gray-800); }
 
-/* ─── Project Card ────────────────────────────────────────────────────────── */
-.project-card {
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  position: relative;
-  transition: background 0.12s;
-}
-.project-card:hover { background: var(--gray-50); }
-.project-card--active {
-  background: var(--primary-light);
-  border-left: 3px solid var(--primary);
-}
-.project-card--active:hover { background: var(--primary-light); }
-
-.project-card-badges {
-  position: absolute;
-  top: 10px;
-  right: 12px;
+.controls-sort { position: relative; flex-shrink: 0; }
+.controls-btn {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  padding: 10px 16px;
+  background: var(--white);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-700);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-
-.project-badge {
+.controls-btn:hover { border-color: var(--primary); color: var(--primary); }
+.controls-btn--active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+}
+.controls-filter-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--primary);
+  color: var(--white);
+  font-size: 11px;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: 12px;
+  justify-content: center;
+}
+.controls-sort-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 210px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(16,24,40,0.14);
+  overflow: hidden;
+  z-index: 500;
+  animation: fdropIn 0.14s ease-out;
+}
+.controls-sort-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: 10px 16px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-700);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.controls-sort-item:hover { background: var(--gray-50); }
+.controls-sort-item--active { color: var(--primary); font-weight: 600; }
+
+/* ─── Residential / Commercial tabs (hand-off style) ──────────────────────── */
+.ctabs {
+  display: flex;
+  gap: 4px;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-100);
+  border-radius: 999px;
+  padding: 4px;
+}
+.ctab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 9999px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gray-500);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.ctab--active {
+  background: var(--white);
+  color: var(--gray-700);
+  font-weight: 500;
+  box-shadow: var(--shadow-sm);
+}
+.ctab-new {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--orange);
+  line-height: 1;
+}
+.ctab-count {
   font-size: 11px;
   font-weight: 600;
+  color: var(--gray-500);
+  background: var(--gray-100);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+.ctab--active .ctab-count { background: var(--primary-light); color: var(--primary); }
+
+/* ─── Project Card (NAVI hand-off) ────────────────────────────────────────── */
+.pcard-slot { padding: 0 16px; }
+.pcard-slot:first-of-type { margin-top: 14px; }
+
+.pcard {
+  position: relative;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.pcard:hover { box-shadow: var(--shadow-sm); border-color: var(--gray-300); }
+.pcard--active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+.pcard--compare {
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
 }
 
-.project-card-header {
+.pcard-badges {
+  position: absolute;
+  top: -7px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 1;
+}
+.pcard-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--white);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+
+.pcard-head {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  margin-bottom: 8px;
 }
-
-.project-card-avatar {
+.pcard-logo {
   width: 42px;
   height: 42px;
-  border-radius: 8px;
-  background: var(--primary);
+  border-radius: 12px;
   color: var(--white);
   font-size: 13px;
   font-weight: 700;
@@ -416,66 +573,87 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   justify-content: center;
   flex-shrink: 0;
 }
-
-.project-card-meta {
+.pcard-info {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 0;
+  gap: 4px;
 }
-
-.project-card-developer {
+.pcard-dev {
   font-size: 12px;
   font-weight: 500;
-  color: var(--gray-500);
+  line-height: 18px;
+  color: var(--gray-700);
 }
-
-.project-card-title-row {
+.pcard-titlerow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
-
-.project-card-name {
-  font-size: 15px;
+.pcard-name {
+  font-size: 14px;
   font-weight: 600;
+  line-height: 20px;
   color: var(--gray-900);
 }
-
-.project-card-sep {
-  color: var(--gray-300);
-  font-size: 13px;
-}
-
-.project-card-location {
-  display: flex;
+.pcard-sep { font-size: 12px; color: var(--gray-700); }
+.pcard-loc {
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-size: 12px;
-  color: var(--gray-500);
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--gray-700);
 }
-
-.project-card-description {
+.pcard-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-left: 2px;
+}
+.pcard-pricelist {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font);
   font-size: 12px;
-  color: var(--gray-500);
-  line-height: 1.5;
-  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--gray-600);
+  flex-shrink: 0;
+  padding-top: 2px;
+  transition: color 0.15s;
+}
+.pcard-pricelist:hover { color: var(--primary); }
+
+.pcard-desc {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--gray-700);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.project-card-stats {
+.pcard-stats {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--gray-600);
-  font-weight: 500;
+  justify-content: space-between;
+  gap: 8px;
   flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--gray-900);
 }
-.project-card-dot { color: var(--gray-300); }
 
 /* ─── Map canvas (MapLibre GL) ───────────────────────────────────────────── */
 .map-canvas {
@@ -487,72 +665,6 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 .map-canvas-gl { position: absolute; inset: 0; }
 .map-canvas-gl canvas { outline: none; }
 .maplibregl-marker:hover { z-index: 5; }
-
-/* ─── Residential ⇄ Commercial swiper ─────────────────────────────────────── */
-.map-toggle {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  background: var(--white);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px;
-  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.16);
-  z-index: 20;
-  isolation: isolate;
-  opacity: 0;
-  transform: translate(-50%, -10px);
-  transition: opacity 0.45s ease, transform 0.45s ease;
-  pointer-events: none;
-}
-.map-toggle--visible {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  pointer-events: auto;
-}
-.map-toggle-btn {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 9px 20px;
-  border-radius: 999px;
-  font-family: var(--font);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--gray-600);
-  white-space: nowrap;
-  transition: color 0.2s;
-}
-.map-toggle-btn--active { color: var(--white); }
-.map-toggle-count {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: var(--gray-100);
-  color: var(--gray-600);
-  transition: background 0.2s, color 0.2s;
-}
-.map-toggle-btn--active .map-toggle-count {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--white);
-}
-.map-toggle-thumb {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: calc(50% - 4px);
-  background: var(--primary);
-  border-radius: 999px;
-  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 0;
-}
 
 /* ─── Zone badges (area + project count) ──────────────────────────────────── */
 .zone-badge {
@@ -686,10 +798,6 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 .price-pin--compare {
   outline: 3px solid #10B981;
   outline-offset: 1px;
-}
-.project-card--compare {
-  border-left: 3px solid #10B981;
-  background: #ECFDF3;
 }
 .compare-check {
   position: absolute;

@@ -95,9 +95,6 @@ function drawZoneAreas(map, zones) {
 export default function MapCanvas({
   projects,
   zones,
-  category,
-  onCategoryChange,
-  counts,
   selectedProject,
   onSelectProject,
   compareSelection,      // array of project ids
@@ -294,25 +291,6 @@ export default function MapCanvas({
   return (
     <div className="map-canvas">
       <div ref={containerRef} className="map-canvas-gl" />
-
-      {/* Residential ⇄ Commercial swiper */}
-      <div className={`map-toggle${introDone ? ' map-toggle--visible' : ''}`}>
-        {['Residential', 'Commercial'].map(c => (
-          <button
-            key={c}
-            type="button"
-            className={`map-toggle-btn${category === c ? ' map-toggle-btn--active' : ''}`}
-            onClick={() => onCategoryChange(c)}
-          >
-            {c === 'Residential' ? '🏠' : '🏢'} {c}
-            <span className="map-toggle-count">{counts[c]}</span>
-          </button>
-        ))}
-        <span
-          className="map-toggle-thumb"
-          style={{ transform: `translateX(${category === 'Commercial' ? '100%' : '0'})` }}
-        />
-      </div>
 
       {/* Map / Satellite toggle */}
       <div className={`style-toggle${introDone ? ' style-toggle--visible' : ''}`}>

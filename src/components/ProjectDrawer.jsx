@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 
 const BADGE_CONFIG = {
-  Trendy:    { icon: '🔥', color: '#FD853A', bg: '#FFF4ED' },
-  Incentive: { icon: '💰', color: '#079455', bg: '#ECFDF3' },
+  Trendy:    { icon: '🔥', color: '#FFFFFF', bg: '#EF476F' },
+  Incentive: { icon: '💰', color: '#FFFFFF', bg: '#FF6006' },
 }
 
 const UNIT_ICONS = {

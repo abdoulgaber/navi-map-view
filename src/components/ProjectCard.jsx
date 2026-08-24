@@ -1,6 +1,6 @@
 const BADGE_CONFIG = {
-  Trendy:    { icon: '🔥', color: '#FD853A', bg: '#FFF4ED' },
-  Incentive: { icon: '💰', color: '#079455', bg: '#ECFDF3' },
+  Trendy:    { icon: '🔥', bg: '#EF476F', shadow: '0 2px 12px rgba(239,71,111,0.2)' },
+  Incentive: { icon: '💰', bg: '#FF6006', shadow: '0 4px 12px rgba(255,96,6,0.1)' },
 }
 
 const TYPE_CONFIG = {
@@ -9,70 +9,82 @@ const TYPE_CONFIG = {
   Commercial:  { color: '#B45309', bg: '#FFFBEB' },
 }
 
+const PinIcon = () => (
+  <svg width="12" height="14" viewBox="0 0 12 14" fill="none">
+    <path d="M6 0.5C3.1 0.5 0.75 2.85 0.75 5.75C0.75 9.5 6 13.5 6 13.5C6 13.5 11.25 9.5 11.25 5.75C11.25 2.85 8.9 0.5 6 0.5Z" fill="#4C64FF"/>
+    <circle cx="6" cy="5.75" r="1.9" fill="#FFFFFF"/>
+  </svg>
+)
+
+const ListIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <path d="M4.5 3.5H12M4.5 7H12M4.5 10.5H12M2 3.5H2.006M2 7H2.006M2 10.5H2.006"
+      stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+
 export default function ProjectCard({ project, active, compareSelected, onClick }) {
   const typeStyle = TYPE_CONFIG[project.type] || TYPE_CONFIG.Residential
+  const deliveryLabel = project.deliveryValue === 0
+    ? 'Ready Now'
+    : `${project.deliveryValue}-Year Delivery`
 
   return (
     <article
-      className={`project-card${active ? ' project-card--active' : ''}${compareSelected ? ' project-card--compare' : ''}`}
+      className={`pcard${active ? ' pcard--active' : ''}${compareSelected ? ' pcard--compare' : ''}`}
       onClick={() => onClick(project)}
     >
-      {compareSelected && <span className="compare-check">✓</span>}
-      {/* Top-right badges */}
-      <div className="project-card-badges">
-        {project.badges.map(b => {
-          const cfg = BADGE_CONFIG[b] || {}
-          return (
-            <span key={b} className="project-badge" style={{ color: cfg.color, background: cfg.bg }}>
-              {cfg.icon} {b}
-            </span>
-          )
-        })}
-      </div>
+      {/* Floating badges over the top edge */}
+      {project.badges.length > 0 && (
+        <div className="pcard-badges">
+          {project.badges.map(b => {
+            const cfg = BADGE_CONFIG[b]
+            return (
+              <span
+                key={b}
+                className="pcard-badge"
+                style={{ background: cfg.bg, boxShadow: cfg.shadow }}
+              >
+                {cfg.icon} {b}
+              </span>
+            )
+          })}
+        </div>
+      )}
 
-      <div className="project-card-header">
-        <div
-          className="project-card-avatar"
-          style={{ background: typeStyle.color }}
-        >
+      {compareSelected && <span className="compare-check">✓</span>}
+
+      <div className="pcard-head">
+        <div className="pcard-logo" style={{ background: typeStyle.color }}>
           {project.developer.slice(0, 2).toUpperCase()}
         </div>
 
-        <div className="project-card-meta">
-          <span className="project-card-developer">{project.developer}</span>
-
-          {/* Name + type tag + location on one row */}
-          <div className="project-card-title-row">
-            <span className="project-card-name">{project.name}</span>
-
-            {/* Project type tag */}
+        <div className="pcard-info">
+          <span className="pcard-dev">{project.developer}</span>
+          <div className="pcard-titlerow">
+            <span className="pcard-name">{project.name}</span>
+            <span className="pcard-sep">|</span>
+            <span className="pcard-loc"><PinIcon /> {project.location}</span>
             <span
-              className="project-type-tag"
+              className="pcard-type"
               style={{ color: typeStyle.color, background: typeStyle.bg }}
             >
               {project.type}
             </span>
-
-            <span className="project-card-sep">|</span>
-
-            <span className="project-card-location">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M6 1C4.07 1 2.5 2.57 2.5 4.5C2.5 7 6 11 6 11S9.5 7 9.5 4.5C9.5 2.57 7.93 1 6 1Zm0 4.75A1.25 1.25 0 1 1 6 3.25a1.25 1.25 0 0 1 0 2.5Z" fill="#475467"/>
-              </svg>
-              {project.location}
-            </span>
           </div>
         </div>
+
+        <button type="button" className="pcard-pricelist" onClick={(e) => { e.stopPropagation(); onClick(project) }}>
+          Price List <ListIcon />
+        </button>
       </div>
 
-      <p className="project-card-description">{project.description}</p>
+      <p className="pcard-desc">{project.description}</p>
 
-      <div className="project-card-stats">
+      <div className="pcard-stats">
         <span>Starting {project.price}</span>
-        <span className="project-card-dot">·</span>
-        <span>BUA {project.bua}</span>
-        <span className="project-card-dot">·</span>
-        <span>{project.delivery}</span>
+        <span>Starting BUA {project.bua}</span>
+        <span>{deliveryLabel}</span>
       </div>
     </article>
   )

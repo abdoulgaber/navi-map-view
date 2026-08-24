@@ -73,6 +73,18 @@ function drawSelectedArea(map, geojson) {
   })
 }
 
+/* Style may still be loading (cached boundaries resolve in a microtask)
+   and setStyle() wipes sources — always draw through this guard. */
+function whenStyleReady(map, fn) {
+  if (map.isStyleLoaded()) { fn(); return }
+  const handler = () => {
+    if (!map.isStyleLoaded()) return
+    map.off('styledata', handler)
+    fn()
+  }
+  map.on('styledata', handler)
+}
+
 function clearSelectedArea(map) {
   if (map.getLayer('area-line')) map.removeLayer('area-line')
   if (map.getLayer('area-fill')) map.removeLayer('area-fill')
@@ -148,8 +160,10 @@ export default function MapCanvas({
   const selectedRef   = useRef(null)
   const compareRef    = useRef(compareSelection)
   const callbacksRef  = useRef({ onSelectProject })
-  const hiddenRef = useRef(0)
-  const orderRef  = useRef([])
+  const hiddenRef       = useRef(0)
+  const orderRef        = useRef([])
+  const boundaryRef     = useRef(null)   // focused area's border geometry
+  const selectedAreaRef = useRef(null)
   const [mapReady, setMapReady]       = useState(false)
   const [introDone, setIntroDone]     = useState(false)
   const [mapType, setMapType]         = useState('map')
@@ -159,7 +173,8 @@ export default function MapCanvas({
   zonesRef.current     = zones
   selectedRef.current  = selectedProject
   compareRef.current   = compareSelection
-  callbacksRef.current = { onSelectProject, onSelectArea }
+  callbacksRef.current   = { onSelectProject, onSelectArea }
+  selectedAreaRef.current = selectedArea
 
   /* ── init map once ─────────────────────────────────────────────────── */
   useEffect(() => {
@@ -210,7 +225,9 @@ export default function MapCanvas({
 
     map.on('style.load', () => {
       try { map.setProjection({ type: 'globe' }) } catch { /* raster fallback */ }
-      drawZoneAreas(map, zonesRef.current)
+      drawZoneAreas(map, zonesRef.current.filter(z => z.area !== selectedAreaRef.current))
+      // setStyle() wipes sources — restore the focused area's border
+      if (boundaryRef.current) drawSelectedArea(map, boundaryRef.current)
       start()
     })
     map.on('load', start)
@@ -406,7 +423,7 @@ export default function MapCanvas({
     if (!map || !mapReady) return
 
     // the selected area gets its real border drawn instead of the hull
-    if (map.isStyleLoaded()) drawZoneAreas(map, zones.filter(z => z.area !== selectedArea))
+    whenStyleReady(map, () => drawZoneAreas(map, zones.filter(z => z.area !== selectedArea)))
 
     zoneMarkers.current.forEach(m => m.remove())
     zoneMarkers.current = []
@@ -431,6 +448,7 @@ export default function MapCanvas({
     if (!map || !mapReady) return
 
     if (!selectedArea) {
+      boundaryRef.current = null
       clearSelectedArea(map)
       return
     }
@@ -448,7 +466,10 @@ export default function MapCanvas({
     /* 2 — … then upgrade to the actual administrative boundary. */
     getAreaBoundary(selectedArea).then(boundary => {
       if (cancelled || !mapRef.current || !boundary) return
-      drawSelectedArea(map, boundary.geojson)
+      boundaryRef.current = boundary.geojson
+      whenStyleReady(map, () => {
+        if (boundaryRef.current) drawSelectedArea(map, boundaryRef.current)
+      })
       map.fitBounds(boundary.bounds, {
         padding: FIT_PADDING,
         duration: 1400,

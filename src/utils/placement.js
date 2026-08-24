@@ -18,7 +18,7 @@ export const HOVER_ROOM = 6    // extra room so hover scaling never collides
 
 export const estimatePillW = (label) => label.length * 7.4 + 26
 
-const intersects = (a, b) =>
+export const intersects = (a, b) =>
   a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1
 
 const rectAt = (pt, w, h) => ({
@@ -30,7 +30,8 @@ const rectAt = (pt, w, h) => ({
  * @param entries    [{ id, x, y, label, area }] — already viewport-filtered
  * @param popularity Map<area, projectCount> — busier areas win pills
  * @param selectedId the project that must always keep its pill
- * @returns { modes: Map<id,'pill'|'dot'|'hidden'>, hidden: number }
+ * @returns { modes, order, hidden } — `order` is the priority sequence,
+ *          reused by the DOM repair pass so demotions stay consistent.
  */
 export function computePlacements(entries, popularity = new Map(), selectedId = null) {
   // Priority: selected → busiest area → incoming (list sort) order
@@ -70,5 +71,45 @@ export function computePlacements(entries, popularity = new Map(), selectedId = 
     }
   }
 
-  return { modes, hidden }
+  return { modes, order: ordered.map(e => e.id), hidden }
+}
+
+/**
+ * Repair pass — runs once the camera settles, against the *measured* DOM
+ * instead of estimated rectangles. Rendered text metrics and marker
+ * transforms can drift a few pixels from the model; this guarantees what
+ * the broker actually sees never overlaps.
+ *
+ * @param order    priority sequence from computePlacements
+ * @param get      (id) => { mode, rect() , setMode(mode) }
+ * @param gap      minimum breathing room between rendered markers (px)
+ * @returns number of markers demoted to hidden
+ */
+export function repairOverlaps(order, get, gap = 6) {
+  const accepted = []
+  let hidden = 0
+  const pad = (r) => ({
+    x1: r.left - gap / 2, y1: r.top - gap / 2,
+    x2: r.right + gap / 2, y2: r.bottom + gap / 2,
+  })
+
+  for (const id of order) {
+    const m = get(id)
+    if (!m || m.mode === 'hidden') continue
+
+    let box = pad(m.rect())
+    if (accepted.some(a => intersects(box, a))) {
+      if (m.mode === 'pill') {
+        m.setMode('dot')                 // try the smaller footprint
+        box = pad(m.rect())
+        if (accepted.some(a => intersects(box, a))) {
+          m.setMode('hidden'); hidden++; continue
+        }
+      } else {
+        m.setMode('hidden'); hidden++; continue
+      }
+    }
+    accepted.push(box)
+  }
+  return hidden
 }

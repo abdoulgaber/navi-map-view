@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Map as MapGL, Marker, Popup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { zoneAreaFeature } from '../utils/geo.js'
-import { computePlacements } from '../utils/placement.js'
+import { computePlacements, repairOverlaps } from '../utils/placement.js'
 
 /**
  * MapCanvas — MapLibre GL map with:
@@ -101,6 +101,7 @@ export default function MapCanvas({
   const compareRef    = useRef(compareSelection)
   const callbacksRef  = useRef({ onSelectProject })
   const hiddenRef = useRef(0)
+  const orderRef  = useRef([])
   const [mapReady, setMapReady]       = useState(false)
   const [introDone, setIntroDone]     = useState(false)
   const [mapType, setMapType]         = useState('map')
@@ -153,7 +154,7 @@ export default function MapCanvas({
       if (raf) return
       raf = requestAnimationFrame(() => { raf = null; syncLayers() })
     })
-    map.on('moveend', () => syncLayers())
+    map.on('moveend', () => { syncLayers(); repairPass() })
 
     return () => {
       clearTimeout(startFallback)
@@ -207,7 +208,8 @@ export default function MapCanvas({
     /* Pills → dots → hidden, never stacked. Priority: selected project,
        then busiest areas (density = broker demand), then list sort order. */
     const popularity = new Map(zonesRef.current.map(z => [z.area, z.count]))
-    const { modes, hidden } = computePlacements(entries, popularity, selectedRef.current?.id)
+    const { modes, order, hidden } = computePlacements(entries, popularity, selectedRef.current?.id)
+    orderRef.current = order
 
     const visible = new Set(byId.keys())
     for (const [id, mode] of modes) {
@@ -226,6 +228,40 @@ export default function MapCanvas({
         pinMarkers.current.delete(id)
       }
     })
+  }
+
+  /* Second pass against the measured DOM — estimated text metrics and
+     marker transforms drift a few px, so verify what is actually on
+     screen and demote anything that still touches a neighbour. */
+  const repairPass = () => {
+    const map = mapRef.current
+    if (!map || map.getZoom() < PIN_ZOOM) return
+    requestAnimationFrame(() => {
+      const extra = repairOverlaps(orderRef.current, (id) => {
+        const entry = pinMarkers.current.get(id)
+        if (!entry) return null
+        return {
+          mode: entry.mode,
+          rect: () => entry.el.getBoundingClientRect(),
+          setMode: (m) => applyMode(entry, m),
+        }
+      })
+      const total = hiddenRef.current + extra
+      if (extra > 0 && total !== hiddenRef.current) {
+        hiddenRef.current = total
+        setHiddenCount(total)
+      }
+    })
+  }
+
+  /* Single place that mutates a marker's render mode */
+  const applyMode = (entry, mode) => {
+    if (entry.mode === mode) return
+    entry.mode = mode
+    entry.el.className     = mode === 'pill' ? 'price-pin' : 'dot-pin'
+    entry.el.textContent   = mode === 'pill' ? entry.label : ''
+    entry.el.style.display = mode === 'hidden' ? 'none' : ''
+    entry.el.setAttribute('aria-label', entry.label)
   }
 
   const ensurePin = (project, map, mode, label) => {
@@ -257,13 +293,8 @@ export default function MapCanvas({
       pinMarkers.current.set(project.id, entry)
     }
 
-    if (entry.mode !== mode) {
-      entry.mode = mode
-      entry.el.className   = mode === 'pill' ? 'price-pin' : 'dot-pin'
-      entry.el.textContent = mode === 'pill' ? label : ''
-      entry.el.setAttribute('aria-label', label)
-      entry.el.style.display = mode === 'hidden' ? 'none' : ''
-    }
+    entry.label = label
+    applyMode(entry, mode)
 
     entry.el.classList.toggle('price-pin--selected', selectedRef.current?.id === project.id)
     entry.el.classList.toggle('price-pin--compare', compareRef.current?.includes(project.id))
@@ -291,7 +322,7 @@ export default function MapCanvas({
         new Marker({ element: el }).setLngLat([zone.lng, zone.lat]).addTo(map)
       )
     }
-    syncLayers()
+    syncLayers(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zones, mapReady])
 
@@ -301,7 +332,7 @@ export default function MapCanvas({
     pinMarkers.current.forEach(entry => entry.marker.remove())
     pinMarkers.current.clear()
     popupRef.current?.remove()
-    syncLayers()
+    syncLayers(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, mapReady])
 
@@ -316,7 +347,7 @@ export default function MapCanvas({
       duration: 1400,
       essential: true,
     })
-    syncLayers()
+    syncLayers(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject, mapReady])
 

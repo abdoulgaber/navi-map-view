@@ -1,5 +1,5 @@
 import {
-  computePlacements, estimatePillW,
+  computePlacements, repairOverlaps, estimatePillW,
   PILL_H, DOT_SIZE,
 } from './placement.js'
 
@@ -71,6 +71,57 @@ for (const { name, entries } of scenarios) {
     `      pills=${pills.length} dots=${dots.length} hidden=${hidden} ` +
     `overlappingPairs=${pairs} worstOverlapPx=${worst.toFixed(1)}\n` +
     `      selectedKeptPill=${selectedKeptPill} busiestAreaShareOfPills=${(topAreaShare * 100).toFixed(0)}%`
+  )
+}
+
+/* ── repair pass: model drift must be corrected against measured DOM ──── */
+{
+  // Simulate rendered rects that drift up to ±14px from the model, which is
+  // what produced real overlaps on the deployed build.
+  const drift = () => (rand() - 0.5) * 28
+  const sim = []
+  for (let i = 0; i < 60; i++) {
+    const cx = 400 + (rand() - 0.5) * 700, cy = 400 + (rand() - 0.5) * 700
+    sim.push({ id: i, cx, cy, mode: 'pill', w: 82 + drift(), h: PILL_H })
+  }
+  const state = new Map(sim.map(s => [s.id, s]))
+  const get = (id) => {
+    const s = state.get(id)
+    if (!s) return null
+    return {
+      get mode() { return s.mode },
+      rect: () => {
+        const w = s.mode === 'pill' ? s.w : DOT_SIZE
+        const h = s.mode === 'pill' ? s.h : DOT_SIZE
+        return { left: s.cx - w/2, right: s.cx + w/2, top: s.cy - h/2, bottom: s.cy + h/2 }
+      },
+      setMode: (m) => { s.mode = m },
+    }
+  }
+  const order = sim.map(s => s.id)
+  const before = (() => {
+    let n = 0
+    for (let i = 0; i < sim.length; i++) for (let j = i+1; j < sim.length; j++) {
+      const a = get(sim[i].id).rect(), b = get(sim[j].id).rect()
+      if (Math.min(a.right,b.right) > Math.max(a.left,b.left) && Math.min(a.bottom,b.bottom) > Math.max(a.top,b.top)) n++
+    }
+    return n
+  })()
+
+  repairOverlaps(order, get)
+
+  const shown = sim.filter(s => s.mode !== 'hidden')
+  let after = 0
+  for (let i = 0; i < shown.length; i++) for (let j = i+1; j < shown.length; j++) {
+    const a = get(shown[i].id).rect(), b = get(shown[j].id).rect()
+    if (Math.min(a.right,b.right) > Math.max(a.left,b.left) && Math.min(a.bottom,b.bottom) > Math.max(a.top,b.top)) after++
+  }
+  const ok = after === 0
+  if (!ok) failures++
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'}  repair pass on drifted DOM rects\n` +
+    `      overlapsBefore=${before} overlapsAfter=${after} ` +
+    `shown=${shown.length}/${sim.length}`
   )
 }
 

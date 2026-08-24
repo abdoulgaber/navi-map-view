@@ -65,7 +65,14 @@ export default function MapView({ filters, search, sort }) {
 
   const zones = useMemo(() =>
     BASE_LOCATIONS
-      .map(loc => ({ ...loc, count: filtered.filter(p => p.location === loc.area).length }))
+      .map(loc => {
+        const inZone = filtered.filter(p => p.location === loc.area)
+        return {
+          ...loc,
+          count: inZone.length,
+          points: inZone.map(p => [p.lng, p.lat]),
+        }
+      })
       .filter(z => z.count > 0),
     [filtered],
   )

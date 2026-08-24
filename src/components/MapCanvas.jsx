@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Map as MapGL, Marker, Popup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { zoneAreaFeature } from '../utils/geo.js'
+import { computePlacements } from '../utils/placement.js'
 
 /**
  * MapCanvas — MapLibre GL map with:
@@ -36,11 +37,6 @@ const INTRO_MS    = 3200
 /* The floating list panel covers the left edge — keep camera targets centered
    in the visible part of the map */
 const MAP_PADDING = { left: 448, top: 0, right: 0, bottom: 0 }
-
-/* ── pin declutter tuning ─────────────────────────────────────────────── */
-const PILL_H     = 30   // rendered pill height (px)
-const PILL_GAP   = 8    // breathing room between pills (px)
-const estimatePillW = (label) => label.length * 7.4 + 26
 
 const ZONES_SRC = 'zones-src'
 
@@ -104,9 +100,11 @@ export default function MapCanvas({
   const selectedRef   = useRef(null)
   const compareRef    = useRef(compareSelection)
   const callbacksRef  = useRef({ onSelectProject })
-  const [mapReady, setMapReady]   = useState(false)
-  const [introDone, setIntroDone] = useState(false)
-  const [mapType, setMapType]     = useState('map')
+  const hiddenRef = useRef(0)
+  const [mapReady, setMapReady]       = useState(false)
+  const [introDone, setIntroDone]     = useState(false)
+  const [mapType, setMapType]         = useState('map')
+  const [hiddenCount, setHiddenCount] = useState(0)
 
   projectsRef.current  = projects
   zonesRef.current     = zones
@@ -125,23 +123,41 @@ export default function MapCanvas({
     })
     mapRef.current = map
 
-    map.on('style.load', () => {
-      try { map.setProjection({ type: 'globe' }) } catch { /* raster fallback */ }
-      drawZoneAreas(map, zonesRef.current)
-    })
-
-    map.on('load', () => {
+    /* Markers/layers only need the STYLE, not every tile — gating on 'load'
+       would leave the map empty whenever tiles are slow to arrive. */
+    let started = false
+    const start = () => {
+      if (started) return
+      started = true
       setMapReady(true)
       setTimeout(() => {
         map.flyTo({ ...EGYPT_VIEW, padding: MAP_PADDING, duration: INTRO_MS, curve: 1.32, essential: true })
         map.once('moveend', () => setIntroDone(true))
+        // never leave the UI chrome hidden if the camera event is missed
+        setTimeout(() => setIntroDone(true), INTRO_MS + 1500)
       }, 400)
-    })
+    }
 
-    map.on('zoom',    () => syncLayers())
+    map.on('style.load', () => {
+      try { map.setProjection({ type: 'globe' }) } catch { /* raster fallback */ }
+      drawZoneAreas(map, zonesRef.current)
+      start()
+    })
+    map.on('load', start)
+    const startFallback = setTimeout(start, 5000)
+
+    // Sync continuously while moving (rAF-throttled) so pins populate
+    // during pans/zooms, plus a final pass when the camera settles
+    let raf = null
+    map.on('move', () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => { raf = null; syncLayers() })
+    })
     map.on('moveend', () => syncLayers())
 
     return () => {
+      clearTimeout(startFallback)
+      if (raf) cancelAnimationFrame(raf)
       popupRef.current?.remove()
       map.remove()
       mapRef.current = null
@@ -174,34 +190,34 @@ export default function MapCanvas({
       return
     }
 
-    const bounds = map.getBounds()
-
-    // Priority: selected project first, then the list's current sort order
-    const inView = []
+    // Visibility by SCREEN position (projection-agnostic — geographic
+    // bounds are unreliable under globe projection + camera padding)
+    const { clientWidth: W, clientHeight: H } = map.getContainer()
+    const MARGIN = 80
+    const entries = []
+    const byId    = new Map()
     for (const p of projectsRef.current) {
-      if (bounds.contains([p.lng, p.lat])) inView.push(p)
-    }
-    const selId = selectedRef.current?.id
-    if (selId) {
-      const i = inView.findIndex(p => p.id === selId)
-      if (i > 0) inView.unshift(inView.splice(i, 1)[0])
+      const pt = map.project([p.lng, p.lat])
+      if (pt.x < -MARGIN || pt.x > W + MARGIN || pt.y < -MARGIN || pt.y > H + MARGIN) continue
+      const label = `EGP ${shortPrice(p.priceValue)}`
+      entries.push({ id: p.id, x: pt.x, y: pt.y, label, area: p.location })
+      byId.set(p.id, { p, label })
     }
 
-    // Greedy screen-space placement with breathing threshold
-    const placed  = []
-    const visible = new Set()
-    for (const p of inView) {
-      visible.add(p.id)
-      const pt    = map.project([p.lng, p.lat])
-      const label = `EGP ${shortPrice(p.priceValue)}`
-      const w = estimatePillW(label) + PILL_GAP
-      const h = PILL_H + PILL_GAP
-      const rect = { x1: pt.x - w / 2, y1: pt.y - h / 2, x2: pt.x + w / 2, y2: pt.y + h / 2 }
-      const collides = placed.some(r =>
-        rect.x1 < r.x2 && rect.x2 > r.x1 && rect.y1 < r.y2 && rect.y2 > r.y1
-      )
-      if (!collides) placed.push(rect)
-      ensurePin(p, map, collides ? 'dot' : 'pill', label)
+    /* Pills → dots → hidden, never stacked. Priority: selected project,
+       then busiest areas (density = broker demand), then list sort order. */
+    const popularity = new Map(zonesRef.current.map(z => [z.area, z.count]))
+    const { modes, hidden } = computePlacements(entries, popularity, selectedRef.current?.id)
+
+    const visible = new Set(byId.keys())
+    for (const [id, mode] of modes) {
+      const { p, label } = byId.get(id)
+      ensurePin(p, map, mode, label)
+    }
+
+    if (hidden !== hiddenRef.current) {
+      hiddenRef.current = hidden
+      setHiddenCount(hidden)
     }
 
     pinMarkers.current.forEach((entry, id) => {
@@ -246,6 +262,7 @@ export default function MapCanvas({
       entry.el.className   = mode === 'pill' ? 'price-pin' : 'dot-pin'
       entry.el.textContent = mode === 'pill' ? label : ''
       entry.el.setAttribute('aria-label', label)
+      entry.el.style.display = mode === 'hidden' ? 'none' : ''
     }
 
     entry.el.classList.toggle('price-pin--selected', selectedRef.current?.id === project.id)
@@ -326,6 +343,17 @@ export default function MapCanvas({
           onClick={() => setMapType('sat')}
         >🛰️ Satellite</button>
       </div>
+
+      {/* Overflow hint — nothing is stacked, so say what's still tucked away */}
+      {introDone && hiddenCount > 0 && (
+        <button
+          type="button"
+          className="zoom-hint"
+          onClick={() => mapRef.current?.zoomIn({ duration: 600 })}
+        >
+          <strong>+{hiddenCount}</strong> more here — zoom in
+        </button>
+      )}
 
       {children}
     </div>

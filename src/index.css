@@ -681,6 +681,34 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 .map-canvas-gl canvas { outline: none; }
 .maplibregl-marker:hover { z-index: 5; }
 
+/* ─── Overflow hint ───────────────────────────────────────────────────────── */
+.zoom-hint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.16);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-600);
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 20;
+  transition: background 0.15s;
+}
+.zoom-hint:hover { background: var(--white); }
+.zoom-hint strong { color: var(--primary); font-weight: 700; }
+
 /* ─── Dot pins (decluttered projects) ─────────────────────────────────────── */
 .dot-pin {
   width: 12px;

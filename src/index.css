@@ -320,20 +320,28 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   position: relative;
 }
 
-/* ─── Left panel ──────────────────────────────────────────────────────────── */
+/* ─── Left panel — glass surface floating over the map ────────────────────── */
 .list-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  bottom: 16px;
   width: 420px;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--white);
-  border-right: 1px solid var(--border);
-  z-index: 10;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(16, 24, 40, 0.18);
+  z-index: 40;
+  overflow: hidden;
 }
 
 .list-panel-top {
   padding: 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(16, 24, 40, 0.06);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -514,17 +522,24 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 
 .pcard {
   position: relative;
-  background: var(--white);
-  border: 1px solid var(--gray-200);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 12px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   cursor: pointer;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+  transition: box-shadow 0.15s, border-color 0.15s, background 0.15s;
 }
-.pcard:hover { box-shadow: var(--shadow-sm); border-color: var(--gray-300); }
+.pcard:hover {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: var(--shadow-sm);
+  border-color: var(--gray-300);
+}
 .pcard--active {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-light);
@@ -655,16 +670,43 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   color: var(--gray-900);
 }
 
-/* ─── Map canvas (MapLibre GL) ───────────────────────────────────────────── */
+/* ─── Map canvas (MapLibre GL) — full-bleed behind the floating panel ─────── */
 .map-canvas {
-  flex: 1;
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   background: #0b1026; /* space behind the globe during the intro */
 }
 .map-canvas-gl { position: absolute; inset: 0; }
 .map-canvas-gl canvas { outline: none; }
 .maplibregl-marker:hover { z-index: 5; }
+
+/* ─── Dot pins (decluttered projects) ─────────────────────────────────────── */
+.dot-pin {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--white);
+  border: 2px solid var(--primary);
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.3);
+  cursor: pointer;
+  font-size: 0;
+  transition: transform 0.12s, background 0.12s;
+}
+.dot-pin:hover {
+  transform: scale(1.45);
+  background: var(--primary);
+}
+.dot-pin.price-pin--selected {
+  background: var(--gray-900);
+  border-color: var(--gray-900);
+  transform: scale(1.45);
+}
+.dot-pin.price-pin--compare {
+  outline: 3px solid #10B981;
+  outline-offset: 1px;
+}
 
 /* ─── Zone badges (area + project count) ──────────────────────────────────── */
 .zone-badge {
@@ -765,7 +807,7 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 .tools-panel {
   position: absolute;
   top: 16px;
-  left: 16px;
+  left: 452px; /* clear of the floating list panel */
   display: flex;
   gap: 8px;
   z-index: 20;
@@ -818,7 +860,7 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 
 .compare-bar {
   position: absolute;
-  left: 16px;
+  left: 452px; /* clear of the floating list panel */
   right: 16px;
   bottom: 16px;
   display: flex;

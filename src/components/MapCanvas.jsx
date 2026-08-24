@@ -7,10 +7,10 @@ import { zoneAreaFeature } from '../utils/geo.js'
  * MapCanvas — MapLibre GL map with:
  *  - Globe intro flying into Egypt on first load
  *  - Highlighted zone areas + count badges at country zoom
- *  - Airbnb-style price pins with hover card at city zoom
- *  - Residential ⇄ Commercial swiper
- *  - Map / Satellite style toggle
- *  - Compare-mode pin highlighting
+ *  - Airbnb-style pin decluttering at city zoom: price pills are placed
+ *    by screen-space collision with a breathing threshold; pins that
+ *    don't fit render as small dots and promote back to pills on zoom-in
+ *  - Hover card per pin/dot, Map/Satellite toggle, compare highlighting
  */
 
 const MAP_STYLE  = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json'
@@ -27,11 +27,20 @@ const SAT_STYLE = {
   },
   layers: [{ id: 'esri', type: 'raster', source: 'esri' }],
 }
-const EGYPT_VIEW = { center: [29.9, 26.9], zoom: 5.55 }
-const GLOBE_VIEW = { center: [8, 15], zoom: 1.4 }
-const PIN_ZOOM   = 8.3      // below → zone areas + badges, above → project pins
-const ZONE_ZOOM  = 10.8     // zoom level when clicking a zone badge
-const INTRO_MS   = 3200     // globe → Egypt sweep duration
+const EGYPT_VIEW  = { center: [29.9, 26.9], zoom: 5.55 }
+const GLOBE_VIEW  = { center: [8, 15], zoom: 1.4 }
+const PIN_ZOOM    = 8.3
+const ZONE_ZOOM   = 10.8
+const INTRO_MS    = 3200
+
+/* The floating list panel covers the left edge — keep camera targets centered
+   in the visible part of the map */
+const MAP_PADDING = { left: 448, top: 0, right: 0, bottom: 0 }
+
+/* ── pin declutter tuning ─────────────────────────────────────────────── */
+const PILL_H     = 30   // rendered pill height (px)
+const PILL_GAP   = 8    // breathing room between pills (px)
+const estimatePillW = (label) => label.length * 7.4 + 26
 
 const ZONES_SRC = 'zones-src'
 
@@ -50,12 +59,8 @@ const hoverCardHTML = (p) => `
     </div>
   </div>`
 
-/** Soft highlighted polygons for the main areas; fade out as pins take over */
 function drawZoneAreas(map, zones) {
-  const data = {
-    type: 'FeatureCollection',
-    features: zones.map(zoneAreaFeature),
-  }
+  const data = { type: 'FeatureCollection', features: zones.map(zoneAreaFeature) }
   const src = map.getSource(ZONES_SRC)
   if (src) { src.setData(data); return }
   map.addSource(ZONES_SRC, { type: 'geojson', data })
@@ -65,13 +70,7 @@ function drawZoneAreas(map, zones) {
     source: ZONES_SRC,
     paint: {
       'fill-color': '#4C64FF',
-      'fill-opacity': [
-        'interpolate', ['linear'], ['zoom'],
-        5, 0.16,
-        7.5, 0.22,
-        10, 0.16,
-        12, 0,
-      ],
+      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.16, 7.5, 0.22, 10, 0.16, 12, 0],
     },
   })
   map.addLayer({
@@ -82,12 +81,7 @@ function drawZoneAreas(map, zones) {
       'line-color': '#4C64FF',
       'line-width': 2,
       'line-dasharray': [2, 2],
-      'line-opacity': [
-        'interpolate', ['linear'], ['zoom'],
-        5, 0.55,
-        10, 0.5,
-        12, 0,
-      ],
+      'line-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.55, 10, 0.5, 12, 0],
     },
   })
 }
@@ -97,13 +91,13 @@ export default function MapCanvas({
   zones,
   selectedProject,
   onSelectProject,
-  compareSelection,      // array of project ids
+  compareSelection,
   children,
 }) {
   const containerRef  = useRef(null)
   const mapRef        = useRef(null)
   const zoneMarkers   = useRef([])
-  const pinMarkers    = useRef(new Map())   // project.id → Marker
+  const pinMarkers    = useRef(new Map())   // project.id → { marker, el, mode }
   const popupRef      = useRef(null)
   const projectsRef   = useRef(projects)
   const zonesRef      = useRef(zones)
@@ -112,7 +106,7 @@ export default function MapCanvas({
   const callbacksRef  = useRef({ onSelectProject })
   const [mapReady, setMapReady]   = useState(false)
   const [introDone, setIntroDone] = useState(false)
-  const [mapType, setMapType]     = useState('map')   // 'map' | 'sat'
+  const [mapType, setMapType]     = useState('map')
 
   projectsRef.current  = projects
   zonesRef.current     = zones
@@ -132,7 +126,6 @@ export default function MapCanvas({
     mapRef.current = map
 
     map.on('style.load', () => {
-      // Globe projection + zone highlights (re-applied after every setStyle)
       try { map.setProjection({ type: 'globe' }) } catch { /* raster fallback */ }
       drawZoneAreas(map, zonesRef.current)
     })
@@ -140,7 +133,7 @@ export default function MapCanvas({
     map.on('load', () => {
       setMapReady(true)
       setTimeout(() => {
-        map.flyTo({ ...EGYPT_VIEW, duration: INTRO_MS, curve: 1.32, essential: true })
+        map.flyTo({ ...EGYPT_VIEW, padding: MAP_PADDING, duration: INTRO_MS, curve: 1.32, essential: true })
         map.once('moveend', () => setIntroDone(true))
       }, 400)
     })
@@ -161,11 +154,10 @@ export default function MapCanvas({
     const map = mapRef.current
     if (!map || !mapReady) return
     map.setStyle(mapType === 'sat' ? SAT_STYLE : MAP_STYLE)
-    // DOM markers survive setStyle; zone layers re-added in style.load
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapType])
 
-  /* ── show zone badges or pins depending on zoom ────────────────────── */
+  /* ── declutter pass: pills where they fit, dots where they don't ───── */
   const syncLayers = () => {
     const map = mapRef.current
     if (!map) return
@@ -176,60 +168,91 @@ export default function MapCanvas({
     })
 
     if (!showPins) {
-      pinMarkers.current.forEach(m => m.remove())
+      pinMarkers.current.forEach(entry => entry.marker.remove())
       pinMarkers.current.clear()
       popupRef.current?.remove()
       return
     }
 
     const bounds = map.getBounds()
-    const visible = new Set()
+
+    // Priority: selected project first, then the list's current sort order
+    const inView = []
     for (const p of projectsRef.current) {
-      if (!bounds.contains([p.lng, p.lat])) continue
-      visible.add(p.id)
-      if (!pinMarkers.current.has(p.id)) {
-        pinMarkers.current.set(p.id, buildPin(p, map))
-      }
+      if (bounds.contains([p.lng, p.lat])) inView.push(p)
     }
-    pinMarkers.current.forEach((marker, id) => {
+    const selId = selectedRef.current?.id
+    if (selId) {
+      const i = inView.findIndex(p => p.id === selId)
+      if (i > 0) inView.unshift(inView.splice(i, 1)[0])
+    }
+
+    // Greedy screen-space placement with breathing threshold
+    const placed  = []
+    const visible = new Set()
+    for (const p of inView) {
+      visible.add(p.id)
+      const pt    = map.project([p.lng, p.lat])
+      const label = `EGP ${shortPrice(p.priceValue)}`
+      const w = estimatePillW(label) + PILL_GAP
+      const h = PILL_H + PILL_GAP
+      const rect = { x1: pt.x - w / 2, y1: pt.y - h / 2, x2: pt.x + w / 2, y2: pt.y + h / 2 }
+      const collides = placed.some(r =>
+        rect.x1 < r.x2 && rect.x2 > r.x1 && rect.y1 < r.y2 && rect.y2 > r.y1
+      )
+      if (!collides) placed.push(rect)
+      ensurePin(p, map, collides ? 'dot' : 'pill', label)
+    }
+
+    pinMarkers.current.forEach((entry, id) => {
       if (!visible.has(id)) {
-        marker.remove()
+        entry.marker.remove()
         pinMarkers.current.delete(id)
       }
     })
   }
 
-  const buildPin = (project, map) => {
-    const el = document.createElement('button')
-    el.className = 'price-pin'
-    el.type = 'button'
-    el.textContent = `EGP ${shortPrice(project.priceValue)}`
-    if (selectedRef.current?.id === project.id) el.classList.add('price-pin--selected')
-    if (compareRef.current?.includes(project.id)) el.classList.add('price-pin--compare')
+  const ensurePin = (project, map, mode, label) => {
+    let entry = pinMarkers.current.get(project.id)
 
-    el.addEventListener('mouseenter', () => {
-      popupRef.current?.remove()
-      popupRef.current = new Popup({
-        closeButton: false,
-        closeOnClick: false,
-        offset: 16,
-        maxWidth: 'none',
-        className: 'pin-popup',
+    if (!entry) {
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.addEventListener('mouseenter', () => {
+        popupRef.current?.remove()
+        popupRef.current = new Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 16,
+          maxWidth: 'none',
+          className: 'pin-popup',
+        })
+          .setLngLat([project.lng, project.lat])
+          .setHTML(hoverCardHTML(project))
+          .addTo(map)
       })
-        .setLngLat([project.lng, project.lat])
-        .setHTML(hoverCardHTML(project))
-        .addTo(map)
-    })
-    el.addEventListener('mouseleave', () => popupRef.current?.remove())
-    el.addEventListener('click', (e) => {
-      e.stopPropagation()
-      callbacksRef.current.onSelectProject(project)
-    })
+      el.addEventListener('mouseleave', () => popupRef.current?.remove())
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        callbacksRef.current.onSelectProject(project)
+      })
+      const marker = new Marker({ element: el }).setLngLat([project.lng, project.lat]).addTo(map)
+      entry = { marker, el, mode: null }
+      pinMarkers.current.set(project.id, entry)
+    }
 
-    return new Marker({ element: el }).setLngLat([project.lng, project.lat]).addTo(map)
+    if (entry.mode !== mode) {
+      entry.mode = mode
+      entry.el.className   = mode === 'pill' ? 'price-pin' : 'dot-pin'
+      entry.el.textContent = mode === 'pill' ? label : ''
+      entry.el.setAttribute('aria-label', label)
+    }
+
+    entry.el.classList.toggle('price-pin--selected', selectedRef.current?.id === project.id)
+    entry.el.classList.toggle('price-pin--compare', compareRef.current?.includes(project.id))
   }
 
-  /* ── zone areas + badges (rebuild when zones change) ───────────────── */
+  /* ── zone areas + badges ───────────────────────────────────────────── */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
@@ -245,7 +268,7 @@ export default function MapCanvas({
       el.type = 'button'
       el.innerHTML = `<strong>${zone.count}</strong><span>${zone.area}</span>`
       el.addEventListener('click', () => {
-        map.flyTo({ center: [zone.lng, zone.lat], zoom: ZONE_ZOOM, duration: 2000, essential: true })
+        map.flyTo({ center: [zone.lng, zone.lat], zoom: ZONE_ZOOM, padding: MAP_PADDING, duration: 2000, essential: true })
       })
       zoneMarkers.current.push(
         new Marker({ element: el }).setLngLat([zone.lng, zone.lat]).addTo(map)
@@ -258,35 +281,33 @@ export default function MapCanvas({
   /* ── refresh pins when the filtered project set changes ────────────── */
   useEffect(() => {
     if (!mapReady) return
-    pinMarkers.current.forEach(m => m.remove())
+    pinMarkers.current.forEach(entry => entry.marker.remove())
     pinMarkers.current.clear()
     popupRef.current?.remove()
     syncLayers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, mapReady])
 
-  /* ── selected project: highlight + fly ─────────────────────────────── */
+  /* ── selected project: fly + re-run declutter so it wins a pill ────── */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !selectedProject) return
     map.flyTo({
       center: [selectedProject.lng, selectedProject.lat],
       zoom: Math.max(map.getZoom(), 13.5),
+      padding: MAP_PADDING,
       duration: 1400,
       essential: true,
     })
-    pinMarkers.current.forEach((marker, id) => {
-      marker.getElement().classList.toggle('price-pin--selected', id === selectedProject.id)
-    })
+    syncLayers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject, mapReady])
 
-  /* ── compare selection: outline pins ───────────────────────────────── */
+  /* ── compare selection: re-run sync so pin classes stay accurate ───── */
   useEffect(() => {
-    pinMarkers.current.forEach((marker, id) => {
-      marker.getElement().classList.toggle('price-pin--compare', compareSelection.includes(id))
-    })
-  }, [compareSelection])
+    if (mapReady) syncLayers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compareSelection, mapReady])
 
   return (
     <div className="map-canvas">
@@ -306,7 +327,6 @@ export default function MapCanvas({
         >🛰️ Satellite</button>
       </div>
 
-      {/* Tools & compare UI — provided by MapView */}
       {children}
     </div>
   )

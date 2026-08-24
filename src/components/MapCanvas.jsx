@@ -251,9 +251,12 @@ export default function MapCanvas({
     orderRef.current = order
 
     const visible = new Set(byId.keys())
+    const rank = new Map(order.map((id, i) => [id, i]))
     for (const [id, mode] of modes) {
       const { p, label } = byId.get(id)
       ensurePin(p, map, mode, label)
+      const entry = pinMarkers.current.get(id)
+      if (entry) entry.priority = rank.get(id) ?? 1e9
     }
 
     if (hidden !== hiddenRef.current) {
@@ -287,15 +290,29 @@ export default function MapCanvas({
     const map = mapRef.current
     if (!map || map.getZoom() < PIN_ZOOM) return
     requestAnimationFrame(() => {
-      const extra = repairOverlaps(orderRef.current, (id) => {
-        const entry = pinMarkers.current.get(id)
-        if (!entry) return null
-        return {
-          mode: entry.mode,
-          rect: () => entry.el.getBoundingClientRect(),
-          setMode: (m) => applyMode(entry, m),
-        }
-      })
+      /* Source markers from the LIVE DOM (not a cached order array, which
+         can go stale between passes) and sort by the priority stamped on
+         each element, so every rendered marker is always checked. */
+      let extra = 0
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const live = [...pinMarkers.current.entries()]
+          .filter(([, e]) => e.mode !== 'hidden')
+          .sort((a, b) => (a[1].priority ?? 1e9) - (b[1].priority ?? 1e9))
+          .map(([id]) => id)
+
+        const demoted = repairOverlaps(live, (id) => {
+          const entry = pinMarkers.current.get(id)
+          if (!entry) return null
+          return {
+            mode: entry.mode,
+            rect: () => entry.el.getBoundingClientRect(),
+            setMode: (m) => applyMode(entry, m),
+          }
+        })
+        extra += demoted
+        if (demoted === 0) break   // stable
+      }
+
       const total = hiddenRef.current + extra
       if (extra > 0 && total !== hiddenRef.current) {
         hiddenRef.current = total

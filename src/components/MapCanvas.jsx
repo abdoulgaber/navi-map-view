@@ -206,8 +206,12 @@ export default function MapCanvas({
           setIntroDone(true)
           syncLayers()
         })
-        // never leave the UI chrome hidden if the camera event is missed
-        setTimeout(() => setIntroDone(true), INTRO_MS + 1500)
+        // never leave the UI chrome hidden — or the map stuck on globe —
+        // if the camera event is missed
+        setTimeout(() => {
+          try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
+          setIntroDone(true)
+        }, INTRO_MS + 1500)
       }, 400)
 
       /* Watchdog — if the camera never reaches Egypt (globe transform can
@@ -462,6 +466,10 @@ export default function MapCanvas({
 
     const zone = zonesRef.current.find(z => z.area === selectedArea)
     let cancelled = false
+
+    /* fitBounds uses camera padding, which is only safe on mercator — make
+       sure we are off the globe even if the intro's moveend never fired. */
+    try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
 
     /* 1 — respond immediately using the project hull, so the click never
            waits on the network … */

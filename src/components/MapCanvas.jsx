@@ -73,18 +73,6 @@ function drawSelectedArea(map, geojson) {
   })
 }
 
-/* Style may still be loading (cached boundaries resolve in a microtask)
-   and setStyle() wipes sources — always draw through this guard. */
-function whenStyleReady(map, fn) {
-  if (map.isStyleLoaded()) { fn(); return }
-  const handler = () => {
-    if (!map.isStyleLoaded()) return
-    map.off('styledata', handler)
-    fn()
-  }
-  map.on('styledata', handler)
-}
-
 function clearSelectedArea(map) {
   if (map.getLayer('area-line')) map.removeLayer('area-line')
   if (map.getLayer('area-fill')) map.removeLayer('area-fill')
@@ -164,6 +152,17 @@ export default function MapCanvas({
   const orderRef        = useRef([])
   const boundaryRef     = useRef(null)   // focused area's border geometry
   const selectedAreaRef = useRef(null)
+  const styleReadyRef   = useRef(false)  // set by the style.load event
+  const pendingDrawRef  = useRef([])
+
+  /* Sources/layers may only be added once the style has loaded. Track that
+     with the style.load EVENT — never with isStyleLoaded(), which stays
+     false whenever tiles cannot finish (offline, blocked worker, slow
+     network) and would silently suppress our layers forever. */
+  const whenStyleReady = (fn) => {
+    if (styleReadyRef.current) { fn(); return }
+    pendingDrawRef.current.push(fn)
+  }
   const [mapReady, setMapReady]       = useState(false)
   const [introDone, setIntroDone]     = useState(false)
   const [mapType, setMapType]         = useState('map')
@@ -227,9 +226,14 @@ export default function MapCanvas({
 
     map.on('style.load', () => {
       try { map.setProjection({ type: 'globe' }) } catch { /* raster fallback */ }
+      styleReadyRef.current = true
       drawZoneAreas(map, zonesRef.current.filter(z => z.area !== selectedAreaRef.current))
       // setStyle() wipes sources — restore the focused area's border
       if (boundaryRef.current) drawSelectedArea(map, boundaryRef.current)
+      // flush anything that asked to draw before the style was ready
+      const pending = pendingDrawRef.current
+      pendingDrawRef.current = []
+      pending.forEach(fn => fn())
       start()
     })
     map.on('load', start)
@@ -260,6 +264,7 @@ export default function MapCanvas({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
+    styleReadyRef.current = false   // setStyle wipes sources; style.load re-arms
     map.setStyle(mapType === 'sat' ? SAT_STYLE : MAP_STYLE)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapType])
@@ -425,7 +430,7 @@ export default function MapCanvas({
     if (!map || !mapReady) return
 
     // the selected area gets its real border drawn instead of the hull
-    whenStyleReady(map, () => drawZoneAreas(map, zones.filter(z => z.area !== selectedArea)))
+    whenStyleReady(() => drawZoneAreas(map, zones.filter(z => z.area !== selectedArea)))
 
     zoneMarkers.current.forEach(m => m.remove())
     zoneMarkers.current = []
@@ -469,7 +474,7 @@ export default function MapCanvas({
     getAreaBoundary(selectedArea).then(boundary => {
       if (cancelled || !mapRef.current || !boundary) return
       boundaryRef.current = boundary.geojson
-      whenStyleReady(map, () => {
+      whenStyleReady(() => {
         if (boundaryRef.current) drawSelectedArea(map, boundaryRef.current)
       })
       map.fitBounds(boundary.bounds, {

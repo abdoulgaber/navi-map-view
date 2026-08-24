@@ -1,7 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
+// base is needed for GitHub Pages (repo sub-path); keep dev at '/'
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  base: '/navi-map-view/',
-})
+  base: command === 'build' ? '/navi-map-view/' : '/',
+  optimizeDeps: {
+    // maplibre-gl ships its own web worker; pre-bundling breaks the worker URL
+    exclude: ['maplibre-gl'],
+  },
+}))

@@ -297,37 +297,6 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 .list-empty p     { font-size: 14px; font-weight: 500; color: var(--gray-600); margin: 0; }
 .list-empty small { font-size: 12px; }
 
-/* ─── Map legend ──────────────────────────────────────────────────────────── */
-.map-legend {
-  position: absolute;
-  bottom: 28px;
-  left: 16px;
-  display: flex;
-  gap: 12px;
-  background: var(--white);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  z-index: 10;
-}
-.map-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--gray-600);
-}
-.map-legend-item::before {
-  content: '';
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--dot);
-  flex-shrink: 0;
-}
-
 /* ─── Map view layout ─────────────────────────────────────────────────────── */
 .map-view {
   flex: 1;
@@ -508,110 +477,177 @@ input  { font-family: var(--font); border: none; outline: none; background: none
 }
 .project-card-dot { color: var(--gray-300); }
 
-/* ─── Map container ───────────────────────────────────────────────────────── */
-.map-container {
+/* ─── Map canvas (MapLibre GL) ───────────────────────────────────────────── */
+.map-canvas {
   flex: 1;
   position: relative;
+  overflow: hidden;
+  background: #0b1026; /* space behind the globe during the intro */
 }
+.map-canvas-gl { position: absolute; inset: 0; }
+.map-canvas-gl canvas { outline: none; }
+.maplibregl-marker:hover { z-index: 5; }
 
-/* Override Leaflet z-index to sit below drawer */
-.leaflet-pane { z-index: 1 !important; }
-.leaflet-top, .leaflet-bottom { z-index: 5 !important; }
-
-/* ─── Custom Markers ──────────────────────────────────────────────────────── */
-.map-marker {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: 3px solid var(--white);
-  box-shadow: 0 2px 8px rgba(76, 100, 255, 0.4);
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-.map-marker:hover { transform: scale(1.15); }
-.map-marker--active {
-  background: var(--gray-900);
-  box-shadow: 0 3px 12px rgba(16, 24, 40, 0.5);
-  transform: scale(1.2);
-}
-
-.map-cluster {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: 3px solid var(--white);
-  box-shadow: 0 3px 12px rgba(76, 100, 255, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.map-cluster span {
-  color: var(--white);
-  font-family: var(--font);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-/* ─── Map controls ────────────────────────────────────────────────────────── */
-.map-controls {
+/* ─── Residential ⇄ Commercial swiper ─────────────────────────────────────── */
+.map-toggle {
   position: absolute;
   top: 16px;
-  right: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  z-index: 10;
-}
-.map-ctrl-btn {
-  width: 36px;
-  height: 36px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   background: var(--white);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 20px;
-  font-weight: 400;
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.16);
+  z-index: 20;
+  isolation: isolate;
+  opacity: 0;
+  transform: translate(-50%, -10px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+  pointer-events: none;
+}
+.map-toggle--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+.map-toggle-btn {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 20px;
+  border-radius: 999px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--gray-600);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.map-toggle-btn--active { color: var(--white); }
+.map-toggle-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  transition: background 0.2s, color 0.2s;
+}
+.map-toggle-btn--active .map-toggle-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--white);
+}
+.map-toggle-thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  background: var(--primary);
+  border-radius: 999px;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+
+/* ─── Zone badges (area + project count) ──────────────────────────────────── */
+.zone-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 14px 5px 5px;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.18);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.zone-badge:hover {
+  transform: scale(1.07);
+  box-shadow: 0 6px 22px rgba(16, 24, 40, 0.26);
+}
+.zone-badge strong {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.map-ctrl-btn:hover { background: var(--gray-50); }
+.zone-badge span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-800);
+  white-space: nowrap;
+}
 
-/* ─── Mini popup on map ───────────────────────────────────────────────────── */
-.map-popup-card {
-  position: absolute;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
+/* ─── Airbnb-style price pins ─────────────────────────────────────────────── */
+.price-pin {
   background: var(--white);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  cursor: pointer;
-  z-index: 10;
-  min-width: 200px;
-  text-align: center;
-}
-.map-popup-card strong {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--gray-900);
-}
-.map-popup-card span {
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: var(--font);
   font-size: 12px;
-  color: var(--gray-500);
+  font-weight: 700;
+  color: var(--gray-900);
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.18);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.12s, background 0.12s, color 0.12s;
 }
-.map-popup-price {
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  color: var(--primary) !important;
+.price-pin:hover {
+  transform: scale(1.08);
+  background: var(--gray-900);
+  color: var(--white);
 }
+.price-pin--selected {
+  background: var(--gray-900);
+  color: var(--white);
+  transform: scale(1.08);
+}
+
+/* ─── Pin hover card ──────────────────────────────────────────────────────── */
+.pin-popup .maplibregl-popup-content {
+  padding: 0;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.22);
+  overflow: hidden;
+  font-family: var(--font);
+}
+.pin-popup .maplibregl-popup-tip { display: none; }
+.pin-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px 12px 12px;
+}
+.pin-card-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e8ebff, #c7d2fe);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.pin-card-body { display: flex; flex-direction: column; gap: 2px; }
+.pin-card-body strong { font-size: 13px; font-weight: 700; color: var(--gray-900); }
+.pin-card-body span { font-size: 11px; font-weight: 500; color: var(--gray-500); }
+.pin-card-body em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--primary); }
 
 /* ─── Drawer ──────────────────────────────────────────────────────────────── */
 .drawer-backdrop {

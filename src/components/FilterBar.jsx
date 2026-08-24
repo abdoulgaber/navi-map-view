@@ -33,7 +33,6 @@ const LOCATION_OPTIONS = [
 ]
 
 export const DEFAULT_FILTERS = {
-  type:     'All Types',
   price:    PRICE_OPTIONS[0],
   location: LOCATION_OPTIONS[0],
   delivery: DELIVERY_OPTIONS[0],
@@ -52,7 +51,6 @@ export function applyFilters(projects, search, filters) {
         !p.location.toLowerCase().includes(q)
       ) return false
     }
-    if (filters.type !== 'All Types' && p.type !== filters.type) return false
     if (p.priceValue < filters.price.min || p.priceValue > filters.price.max) return false
     if (
       filters.location.label !== 'All Locations' &&
@@ -172,7 +170,6 @@ function ToggleChip({ icon, label, active, onClick }) {
 /* ─── FilterBar ─────────────────────────────────────────────────────────── */
 export default function FilterBar({ filters, onChange }) {
   const activeCount = [
-    filters.type !== 'All Types',
     filters.price.label !== 'Any Price',
     filters.location.label !== 'All Locations',
     filters.delivery.label !== 'Any Delivery',
@@ -187,21 +184,6 @@ export default function FilterBar({ filters, onChange }) {
   return (
     <div className="fbar">
       <div className="fbar-scroll">
-
-        {/* ── Project type ── */}
-        <div className="fbar-group">
-          {['All Types', 'Residential', 'Mixed', 'Commercial'].map(t => (
-            <ToggleChip
-              key={t}
-              icon={t === 'Residential' ? '🏠' : t === 'Mixed' ? '🏗' : t === 'Commercial' ? '🏢' : null}
-              label={t}
-              active={filters.type === t}
-              onClick={() => set({ type: t })}
-            />
-          ))}
-        </div>
-
-        <div className="fbar-sep" />
 
         {/* ── Price ── */}
         <DropdownChip

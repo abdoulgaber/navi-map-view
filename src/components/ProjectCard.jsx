@@ -9,14 +9,15 @@ const TYPE_CONFIG = {
   Commercial:  { color: '#B45309', bg: '#FFFBEB' },
 }
 
-export default function ProjectCard({ project, active, onClick }) {
+export default function ProjectCard({ project, active, compareSelected, onClick }) {
   const typeStyle = TYPE_CONFIG[project.type] || TYPE_CONFIG.Residential
 
   return (
     <article
-      className={`project-card${active ? ' project-card--active' : ''}`}
+      className={`project-card${active ? ' project-card--active' : ''}${compareSelected ? ' project-card--compare' : ''}`}
       onClick={() => onClick(project)}
     >
+      {compareSelected && <span className="compare-check">✓</span>}
       {/* Top-right badges */}
       <div className="project-card-badges">
         {project.badges.map(b => {

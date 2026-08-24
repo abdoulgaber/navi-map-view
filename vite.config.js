@@ -5,8 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig(({ command }) => ({
   plugins: [react()],
   base: command === 'build' ? '/navi-map-view/' : '/',
-  optimizeDeps: {
-    // maplibre-gl ships its own web worker; pre-bundling breaks the worker URL
-    exclude: ['maplibre-gl'],
-  },
+  // MapLibre's worker is an ES module; it is imported with ?worker&url in
+  // MapCanvas and handed to setWorkerUrl(), so it must be emitted as ESM.
+  worker: { format: 'es' },
 }))

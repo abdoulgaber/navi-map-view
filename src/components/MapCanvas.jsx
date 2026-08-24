@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Map as MapGL, Marker, Popup } from 'maplibre-gl'
+import { Map as MapGL, Marker, Popup, setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+// MapLibre v6 resolves its worker at runtime via a template literal
+// (`new URL(\`./${name}\`, import.meta.url)`), which bundlers cannot see —
+// so the worker is never emitted and 404s in production, leaving a blank
+// map (no vector tiles, no GeoJSON). Hand it the URL Vite actually built.
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { zoneAreaFeature } from '../utils/geo.js'
 import { computePlacements, repairOverlaps } from '../utils/placement.js'
 
@@ -13,6 +18,8 @@ import { computePlacements, repairOverlaps } from '../utils/placement.js'
  *    don't fit render as small dots and promote back to pills on zoom-in
  *  - Hover card per pin/dot, Map/Satellite toggle, compare highlighting
  */
+
+setWorkerUrl(maplibreWorkerUrl)
 
 const MAP_STYLE  = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json'
 const SAT_STYLE = {

@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { Map as MapGL, Marker, Popup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { circleGeoJSON } from '../utils/geo.js'
+import { zoneAreaFeature } from '../utils/geo.js'
 
 /**
  * MapCanvas — MapLibre GL map with:
  *  - Globe intro flying into Egypt on first load
- *  - Zone badges at country zoom / Airbnb-style price pins at city zoom
- *  - Hover card per pin, Residential ⇄ Commercial swiper
- *  - Map / Satellite style toggle (CARTO Voyager / Esri World Imagery)
- *  - Radius-filter circle overlay + crosshair placement
+ *  - Highlighted zone areas + count badges at country zoom
+ *  - Airbnb-style price pins with hover card at city zoom
+ *  - Residential ⇄ Commercial swiper
+ *  - Map / Satellite style toggle
  *  - Compare-mode pin highlighting
  */
 
@@ -29,11 +29,11 @@ const SAT_STYLE = {
 }
 const EGYPT_VIEW = { center: [29.9, 26.9], zoom: 5.55 }
 const GLOBE_VIEW = { center: [8, 15], zoom: 1.4 }
-const PIN_ZOOM   = 8.3      // below → zone badges, above → project pins
+const PIN_ZOOM   = 8.3      // below → zone areas + badges, above → project pins
 const ZONE_ZOOM  = 10.8     // zoom level when clicking a zone badge
 const INTRO_MS   = 3200     // globe → Egypt sweep duration
 
-const RADIUS_SRC = 'radius-src'
+const ZONES_SRC = 'zones-src'
 
 const shortPrice = (v) =>
   v >= 1_000_000
@@ -50,19 +50,46 @@ const hoverCardHTML = (p) => `
     </div>
   </div>`
 
-function drawRadius(map, center, km) {
-  const data = circleGeoJSON(center, km)
-  const src = map.getSource(RADIUS_SRC)
+/** Soft highlighted polygons for the main areas; fade out as pins take over */
+function drawZoneAreas(map, zones) {
+  const data = {
+    type: 'FeatureCollection',
+    features: zones.map(zoneAreaFeature),
+  }
+  const src = map.getSource(ZONES_SRC)
   if (src) { src.setData(data); return }
-  map.addSource(RADIUS_SRC, { type: 'geojson', data })
-  map.addLayer({ id: 'radius-fill', type: 'fill', source: RADIUS_SRC, paint: { 'fill-color': '#4C64FF', 'fill-opacity': 0.08 } })
-  map.addLayer({ id: 'radius-line', type: 'line', source: RADIUS_SRC, paint: { 'line-color': '#4C64FF', 'line-width': 2 } })
-}
-
-function clearRadiusLayers(map) {
-  if (map.getLayer('radius-line')) map.removeLayer('radius-line')
-  if (map.getLayer('radius-fill')) map.removeLayer('radius-fill')
-  if (map.getSource(RADIUS_SRC)) map.removeSource(RADIUS_SRC)
+  map.addSource(ZONES_SRC, { type: 'geojson', data })
+  map.addLayer({
+    id: 'zone-fill',
+    type: 'fill',
+    source: ZONES_SRC,
+    paint: {
+      'fill-color': '#4C64FF',
+      'fill-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        5, 0.16,
+        7.5, 0.22,
+        10, 0.16,
+        12, 0,
+      ],
+    },
+  })
+  map.addLayer({
+    id: 'zone-line',
+    type: 'line',
+    source: ZONES_SRC,
+    paint: {
+      'line-color': '#4C64FF',
+      'line-width': 2,
+      'line-dasharray': [2, 2],
+      'line-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        5, 0.55,
+        10, 0.5,
+        12, 0,
+      ],
+    },
+  })
 }
 
 export default function MapCanvas({
@@ -73,10 +100,6 @@ export default function MapCanvas({
   counts,
   selectedProject,
   onSelectProject,
-  radiusActive,
-  radiusCenter,          // [lng, lat] | null
-  radiusKm,
-  onRadiusCenter,
   compareSelection,      // array of project ids
   children,
 }) {
@@ -84,22 +107,21 @@ export default function MapCanvas({
   const mapRef        = useRef(null)
   const zoneMarkers   = useRef([])
   const pinMarkers    = useRef(new Map())   // project.id → Marker
-  const centerMarker  = useRef(null)
   const popupRef      = useRef(null)
   const projectsRef   = useRef(projects)
+  const zonesRef      = useRef(zones)
   const selectedRef   = useRef(null)
   const compareRef    = useRef(compareSelection)
-  const radiusRef     = useRef({ active: radiusActive, center: radiusCenter, km: radiusKm })
-  const callbacksRef  = useRef({ onSelectProject, onRadiusCenter })
+  const callbacksRef  = useRef({ onSelectProject })
   const [mapReady, setMapReady]   = useState(false)
   const [introDone, setIntroDone] = useState(false)
   const [mapType, setMapType]     = useState('map')   // 'map' | 'sat'
 
   projectsRef.current  = projects
+  zonesRef.current     = zones
   selectedRef.current  = selectedProject
   compareRef.current   = compareSelection
-  radiusRef.current    = { active: radiusActive, center: radiusCenter, km: radiusKm }
-  callbacksRef.current = { onSelectProject, onRadiusCenter }
+  callbacksRef.current = { onSelectProject }
 
   /* ── init map once ─────────────────────────────────────────────────── */
   useEffect(() => {
@@ -113,11 +135,9 @@ export default function MapCanvas({
     mapRef.current = map
 
     map.on('style.load', () => {
-      // Globe projection (re-applied after every setStyle)
+      // Globe projection + zone highlights (re-applied after every setStyle)
       try { map.setProjection({ type: 'globe' }) } catch { /* raster fallback */ }
-      // Radius circle survives style switches
-      const r = radiusRef.current
-      if (r.center) drawRadius(map, r.center, r.km)
+      drawZoneAreas(map, zonesRef.current)
     })
 
     map.on('load', () => {
@@ -126,11 +146,6 @@ export default function MapCanvas({
         map.flyTo({ ...EGYPT_VIEW, duration: INTRO_MS, curve: 1.32, essential: true })
         map.once('moveend', () => setIntroDone(true))
       }, 400)
-    })
-
-    map.on('click', (e) => {
-      if (!radiusRef.current.active) return
-      callbacksRef.current.onRadiusCenter([e.lngLat.lng, e.lngLat.lat])
     })
 
     map.on('zoom',    () => syncLayers())
@@ -149,46 +164,9 @@ export default function MapCanvas({
     const map = mapRef.current
     if (!map || !mapReady) return
     map.setStyle(mapType === 'sat' ? SAT_STYLE : MAP_STYLE)
-    // DOM markers survive setStyle; radius layers re-added in style.load
+    // DOM markers survive setStyle; zone layers re-added in style.load
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapType])
-
-  /* ── crosshair cursor while placing radius center ──────────────────── */
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady) return
-    map.getCanvas().style.cursor = radiusActive ? 'crosshair' : ''
-  }, [radiusActive, mapReady])
-
-  /* ── radius circle + center dot ────────────────────────────────────── */
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady) return
-
-    if (radiusCenter) {
-      drawRadius(map, radiusCenter, radiusKm)
-      if (!centerMarker.current) {
-        const el = document.createElement('div')
-        el.className = 'center-pin'
-        centerMarker.current = new Marker({ element: el }).setLngLat(radiusCenter).addTo(map)
-      } else {
-        centerMarker.current.setLngLat(radiusCenter)
-      }
-    } else {
-      clearRadiusLayers(map)
-      centerMarker.current?.remove()
-      centerMarker.current = null
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [radiusCenter, radiusKm, mapReady])
-
-  /* ── fly to a newly placed radius center ───────────────────────────── */
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady || !radiusCenter) return
-    map.flyTo({ center: radiusCenter, zoom: Math.max(map.getZoom(), 10.5), duration: 900, essential: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [radiusCenter, mapReady])
 
   /* ── show zone badges or pins depending on zoom ────────────────────── */
   const syncLayers = () => {
@@ -254,10 +232,12 @@ export default function MapCanvas({
     return new Marker({ element: el }).setLngLat([project.lng, project.lat]).addTo(map)
   }
 
-  /* ── zone badges ───────────────────────────────────────────────────── */
+  /* ── zone areas + badges (rebuild when zones change) ───────────────── */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
+
+    if (map.isStyleLoaded()) drawZoneAreas(map, zones)
 
     zoneMarkers.current.forEach(m => m.remove())
     zoneMarkers.current = []
@@ -348,7 +328,7 @@ export default function MapCanvas({
         >🛰️ Satellite</button>
       </div>
 
-      {/* Tools, radius panel, compare bar, empty state — provided by MapView */}
+      {/* Tools & compare UI — provided by MapView */}
       {children}
     </div>
   )

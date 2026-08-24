@@ -782,11 +782,14 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   padding: 6px 12px;
   font-family: var(--font);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--gray-900);
   box-shadow: 0 2px 8px rgba(16, 24, 40, 0.18);
   cursor: pointer;
   white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: transform 0.12s, background 0.12s, color 0.12s;
 }
 .price-pin:hover {

@@ -34,9 +34,11 @@ const PIN_ZOOM    = 8.3
 const ZONE_ZOOM   = 10.8
 const INTRO_MS    = 3200
 
-/* The floating list panel covers the left edge — keep camera targets centered
-   in the visible part of the map */
-const MAP_PADDING = { left: 448, top: 0, right: 0, bottom: 0 }
+/* The floating list panel covers the left edge — nudge camera targets into
+   the visible half of the map. NOTE: use `offset` (screen px), never
+   `padding`: camera padding under globe projection yields a broken
+   transform, which freezes the camera and leaves the map unpainted. */
+const PANEL_OFFSET = [224, 0]
 
 const ZONES_SRC = 'zones-src'
 
@@ -44,6 +46,13 @@ const shortPrice = (v) =>
   v >= 1_000_000
     ? `${(v / 1_000_000).toFixed(v % 1_000_000 >= 100_000 ? 1 : 0)}M`
     : `${Math.round(v / 1_000)}K`
+
+/* Chips carry the project NAME — brokers recognise projects by name, and
+   the exact price is one hover away on the quick-view card. Long names are
+   clipped so a single chip can never hog the viewport. */
+const MAX_LABEL = 20
+const pinLabel = (p) =>
+  p.name.length > MAX_LABEL ? `${p.name.slice(0, MAX_LABEL - 1).trimEnd()}…` : p.name
 
 const hoverCardHTML = (p) => `
   <div class="pin-card">
@@ -127,16 +136,30 @@ export default function MapCanvas({
     /* Markers/layers only need the STYLE, not every tile — gating on 'load'
        would leave the map empty whenever tiles are slow to arrive. */
     let started = false
+    let watchdog = null
     const start = () => {
       if (started) return
       started = true
       setMapReady(true)
       setTimeout(() => {
-        map.flyTo({ ...EGYPT_VIEW, padding: MAP_PADDING, duration: INTRO_MS, curve: 1.32, essential: true })
+        map.flyTo({ ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: INTRO_MS, curve: 1.32, essential: true })
         map.once('moveend', () => setIntroDone(true))
         // never leave the UI chrome hidden if the camera event is missed
         setTimeout(() => setIntroDone(true), INTRO_MS + 1500)
       }, 400)
+
+      /* Watchdog — if the camera never reaches Egypt (globe transform can
+         stall on some GPUs/drivers), drop to mercator and show Egypt
+         directly rather than leaving the broker on a blank sphere. */
+      watchdog = setTimeout(() => {
+        if (!mapRef.current) return
+        if (Math.abs(map.getZoom() - EGYPT_VIEW.zoom) > 1) {
+          try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
+          map.jumpTo({ ...EGYPT_VIEW })
+          setIntroDone(true)
+          syncLayers()
+        }
+      }, INTRO_MS + 2600)
     }
 
     map.on('style.load', () => {
@@ -158,6 +181,7 @@ export default function MapCanvas({
 
     return () => {
       clearTimeout(startFallback)
+      clearTimeout(watchdog)
       if (raf) cancelAnimationFrame(raf)
       popupRef.current?.remove()
       map.remove()
@@ -200,7 +224,7 @@ export default function MapCanvas({
     for (const p of projectsRef.current) {
       const pt = map.project([p.lng, p.lat])
       if (pt.x < -MARGIN || pt.x > W + MARGIN || pt.y < -MARGIN || pt.y > H + MARGIN) continue
-      const label = `EGP ${shortPrice(p.priceValue)}`
+      const label = pinLabel(p)
       entries.push({ id: p.id, x: pt.x, y: pt.y, label, area: p.location })
       byId.set(p.id, { p, label })
     }
@@ -261,7 +285,7 @@ export default function MapCanvas({
     entry.el.className     = mode === 'pill' ? 'price-pin' : 'dot-pin'
     entry.el.textContent   = mode === 'pill' ? entry.label : ''
     entry.el.style.display = mode === 'hidden' ? 'none' : ''
-    entry.el.setAttribute('aria-label', entry.label)
+    entry.el.setAttribute('aria-label', entry.aria ?? entry.label)
   }
 
   const ensurePin = (project, map, mode, label) => {
@@ -294,6 +318,7 @@ export default function MapCanvas({
     }
 
     entry.label = label
+    entry.aria  = `${project.name} — ${project.developer} — from ${project.price}`
     applyMode(entry, mode)
 
     entry.el.classList.toggle('price-pin--selected', selectedRef.current?.id === project.id)
@@ -316,7 +341,7 @@ export default function MapCanvas({
       el.type = 'button'
       el.innerHTML = `<strong>${zone.count}</strong><span>${zone.area}</span>`
       el.addEventListener('click', () => {
-        map.flyTo({ center: [zone.lng, zone.lat], zoom: ZONE_ZOOM, padding: MAP_PADDING, duration: 2000, essential: true })
+        map.flyTo({ center: [zone.lng, zone.lat], zoom: ZONE_ZOOM, offset: PANEL_OFFSET, duration: 2000, essential: true })
       })
       zoneMarkers.current.push(
         new Marker({ element: el }).setLngLat([zone.lng, zone.lat]).addTo(map)
@@ -343,7 +368,7 @@ export default function MapCanvas({
     map.flyTo({
       center: [selectedProject.lng, selectedProject.lat],
       zoom: Math.max(map.getZoom(), 13.5),
-      padding: MAP_PADDING,
+      offset: PANEL_OFFSET,
       duration: 1400,
       essential: true,
     })

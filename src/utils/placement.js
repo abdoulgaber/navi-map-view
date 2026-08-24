@@ -16,7 +16,9 @@ export const DOT_SIZE   = 12   // rendered dot diameter (px)
 export const DOT_GAP    = 7    // breathing room around a dot (px)
 export const HOVER_ROOM = 6    // extra room so hover scaling never collides
 
-export const estimatePillW = (label) => label.length * 7.4 + 26
+/* Chips carry project names (mixed-case letters are wider than digits);
+   a slight over-estimate is safe — the repair pass corrects the rest. */
+export const estimatePillW = (label) => label.length * 7.9 + 26
 
 export const intersects = (a, b) =>
   a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1

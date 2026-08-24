@@ -354,6 +354,13 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   color: var(--gray-500);
 }
 .list-hint { color: var(--gray-400); font-weight: 400; }
+.list-more {
+  padding: 14px 16px 4px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--gray-400);
+}
 
 /* ── "Within this area" pill (shown while an area is focused) ── */
 .area-pill {

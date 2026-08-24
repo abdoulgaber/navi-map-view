@@ -87,14 +87,31 @@ function seededRandom(seed) {
   }
 }
 
+/* Every project needs a distinct name — map chips carry the name, so two
+   "The Crown" pills side by side read as a duplicate/bug. Repeats become
+   phases the way developers actually name them: The Crown II, III … */
+const ROMAN = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII', ' IX', ' X',
+               ' XI', ' XII', ' XIII', ' XIV', ' XV', ' XVI', ' XVII', ' XVIII']
+function makeNamer() {
+  const seen = new Map()
+  return (base) => {
+    const n = seen.get(base) ?? 0
+    seen.set(base, n + 1)
+    return n < ROMAN.length ? `${base}${ROMAN[n]}` : `${base} ${n + 1}`
+  }
+}
+
 function generateProjects() {
   const projects = []
+  const uniqueName = makeNamer()
   let id = 1
 
   for (let locIdx = 0; locIdx < BASE_LOCATIONS.length; locIdx++) {
     const loc   = BASE_LOCATIONS[locIdx]
     // More projects for major Cairo-area locations
-    const count = locIdx < 6 ? 28 : locIdx < 12 ? 16 : 8
+    // Density mirrors the real market: the New-Cairo/October belt carries
+    // most inventory. Sized to stress-test pin decluttering (~1,500).
+    const count = locIdx < 6 ? 120 : locIdx < 12 ? 60 : 28
 
     for (let i = 0; i < count; i++) {
       const rng = seededRandom(id * 9301 + 49297)
@@ -104,7 +121,7 @@ function generateProjects() {
       const lng = loc.lng + (rng() - 0.5) * loc.scatter * 2
 
       const developer  = DEVELOPERS[(id * 7 + locIdx) % DEVELOPERS.length]
-      const name       = PROJECT_NAMES[(id * 3 + i) % PROJECT_NAMES.length]
+      const name       = uniqueName(PROJECT_NAMES[(id * 3 + i) % PROJECT_NAMES.length])
       const desc       = DESCRIPTIONS[(id + i) % DESCRIPTIONS.length]
       const type       = PROJECT_TYPES[(id * 3) % PROJECT_TYPES.length]
 

@@ -6,9 +6,8 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // so the worker is never emitted and 404s in production, leaving a blank
 // map (no vector tiles, no GeoJSON). Hand it the URL Vite actually built.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { zoneAreaFeature } from '../utils/geo.js'
 import { computePlacements, repairOverlaps } from '../utils/placement.js'
-import { getAreaBoundary, boundsOfPoints } from '../utils/boundaries.js'
+import { getAreaBoundary, boundsOfPoints, boundaryFeatures } from '../utils/boundaries.js'
 
 /**
  * MapCanvas — MapLibre GL map with:
@@ -101,8 +100,10 @@ const hoverCardHTML = (p) => `
     </div>
   </div>`
 
+/* Real administrative borders for every area OSM has one for. Areas
+   without an official polygon are intentionally left unshaded. */
 function drawZoneAreas(map, zones) {
-  const data = { type: 'FeatureCollection', features: zones.map(zoneAreaFeature) }
+  const data = boundaryFeatures(zones.map(z => z.area))
   const src = map.getSource(ZONES_SRC)
   if (src) { src.setData(data); return }
   map.addSource(ZONES_SRC, { type: 'geojson', data })
@@ -112,7 +113,7 @@ function drawZoneAreas(map, zones) {
     source: ZONES_SRC,
     paint: {
       'fill-color': '#4C64FF',
-      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.16, 7.5, 0.22, 10, 0.16, 12, 0],
+      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.10, 8, 0.14, 12, 0.08, 14, 0.04],
     },
   })
   map.addLayer({
@@ -121,9 +122,8 @@ function drawZoneAreas(map, zones) {
     source: ZONES_SRC,
     paint: {
       'line-color': '#4C64FF',
-      'line-width': 2,
-      'line-dasharray': [2, 2],
-      'line-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.55, 10, 0.5, 12, 0],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1, 10, 1.5, 14, 2],
+      'line-opacity': 0.55,
     },
   })
 }
@@ -464,36 +464,28 @@ export default function MapCanvas({
       return
     }
 
-    const zone = zonesRef.current.find(z => z.area === selectedArea)
-    let cancelled = false
-
     /* fitBounds uses camera padding, which is only safe on mercator — make
        sure we are off the globe even if the intro's moveend never fired. */
     try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
 
-    /* 1 — respond immediately using the project hull, so the click never
-           waits on the network … */
-    const fallback = zone ? boundsOfPoints(zone.points ?? []) : null
-    if (fallback) {
-      map.fitBounds(fallback, { padding: FIT_PADDING, duration: 1200, maxZoom: 14, essential: true })
-    }
+    const boundary = getAreaBoundary(selectedArea)   // bundled, synchronous
+    const zone     = zonesRef.current.find(z => z.area === selectedArea)
 
-    /* 2 — … then upgrade to the actual administrative boundary. */
-    getAreaBoundary(selectedArea).then(boundary => {
-      if (cancelled || !mapRef.current || !boundary) return
-      boundaryRef.current = boundary.geojson
+    if (boundary) {
+      boundaryRef.current = boundary.geometry
       whenStyleReady(() => {
         if (boundaryRef.current) drawSelectedArea(map, boundaryRef.current)
       })
-      map.fitBounds(boundary.bounds, {
-        padding: FIT_PADDING,
-        duration: 1400,
-        maxZoom: 14,
-        essential: true,
-      })
-    })
+    } else {
+      // OSM has no official polygon for this area — no invented shape
+      boundaryRef.current = null
+      clearSelectedArea(map)
+    }
 
-    return () => { cancelled = true }
+    const bounds = boundary?.bounds ?? boundsOfPoints(zone?.points ?? [])
+    if (bounds) {
+      map.fitBounds(bounds, { padding: FIT_PADDING, duration: 1400, maxZoom: 14, essential: true })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedArea, mapReady])
 

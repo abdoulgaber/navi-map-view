@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react'
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { projects, BASE_LOCATIONS } from '../data/projects.js'
 import { applyFilters } from './FilterBar.jsx'
 import { sortProjects } from './ControlsBar.jsx'
@@ -48,6 +48,11 @@ export default function MapView({ filters, search, sort }) {
 
   const listRef = useRef(null)
 
+  /* The map handles 1,400+ projects fine, but rendering that many cards
+     would choke the panel — reveal them as the broker scrolls. */
+  const PAGE = 40
+  const [visibleCount, setVisibleCount] = useState(PAGE)
+
   /* ── pipeline: filters+search → category → sort ────────────────────── */
   const baseFiltered = useMemo(
     () => applyFilters(projects, search, filters),
@@ -70,6 +75,9 @@ export default function MapView({ filters, search, sort }) {
     () => selectedArea ? inCategory.filter(p => p.location === selectedArea) : inCategory,
     [inCategory, selectedArea],
   )
+
+  // restart paging whenever the result set changes underneath the panel
+  useEffect(() => { setVisibleCount(PAGE) }, [filtered])
 
   const zones = useMemo(() =>
     BASE_LOCATIONS
@@ -156,7 +164,16 @@ export default function MapView({ filters, search, sort }) {
             </div>
           )}
         </div>
-        <div className="list-scroll" ref={listRef}>
+        <div
+          className="list-scroll"
+          ref={listRef}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) {
+              setVisibleCount(c => Math.min(c + PAGE, filtered.length))
+            }
+          }}
+        >
           {filtered.length === 0 && (
             <div className="list-empty">
               <span>🔍</span>
@@ -164,7 +181,7 @@ export default function MapView({ filters, search, sort }) {
               <small>Try adjusting your search or clearing some filters.</small>
             </div>
           )}
-          {filtered.map(project => (
+          {filtered.slice(0, visibleCount).map(project => (
             <div key={project.id} data-id={project.id} className="pcard-slot">
               <ProjectCard
                 project={project}
@@ -174,6 +191,11 @@ export default function MapView({ filters, search, sort }) {
               />
             </div>
           ))}
+          {visibleCount < filtered.length && (
+            <div className="list-more">
+              Showing {visibleCount} of {filtered.length.toLocaleString()} — scroll for more
+            </div>
+          )}
         </div>
       </aside>
 

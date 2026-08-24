@@ -189,6 +189,7 @@ export default function MapCanvas({
     return () => {
       clearTimeout(startFallback)
       clearTimeout(watchdog)
+      clearTimeout(repairTimer.current)
       if (raf) cancelAnimationFrame(raf)
       popupRef.current?.remove()
       map.remove()
@@ -259,6 +260,17 @@ export default function MapCanvas({
         pinMarkers.current.delete(id)
       }
     })
+
+    scheduleRepair()
+  }
+
+  /* Any sync can promote a marker back to a pill (model-based), so the
+     measured repair must follow every sync — debounced so it costs one
+     pass once movement settles, not one per frame. */
+  const repairTimer = useRef(null)
+  const scheduleRepair = () => {
+    clearTimeout(repairTimer.current)
+    repairTimer.current = setTimeout(() => repairPass(), 120)
   }
 
   /* Second pass against the measured DOM — estimated text metrics and

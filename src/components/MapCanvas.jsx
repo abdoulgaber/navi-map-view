@@ -143,7 +143,14 @@ export default function MapCanvas({
       setMapReady(true)
       setTimeout(() => {
         map.flyTo({ ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: INTRO_MS, curve: 1.32, essential: true })
-        map.once('moveend', () => setIntroDone(true))
+        map.once('moveend', () => {
+          /* Globe is only for the cinematic entry. Everything after it —
+             tiles, zone fills, hours of broker panning — runs on mercator,
+             which is the widely-supported path on every GPU/driver. */
+          try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
+          setIntroDone(true)
+          syncLayers()
+        })
         // never leave the UI chrome hidden if the camera event is missed
         setTimeout(() => setIntroDone(true), INTRO_MS + 1500)
       }, 400)

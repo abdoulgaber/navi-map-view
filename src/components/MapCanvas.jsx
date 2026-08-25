@@ -161,6 +161,20 @@ export default function MapCanvas({
   const pendingDrawRef  = useRef([])
   const watchdogRef     = useRef(null)
   const introDoneRef    = useRef(false)
+  const cameraIntentRef = useRef(null)   // last camera we asked for
+  const hadSizeRef      = useRef(false)
+
+  /* MapLibre silently ignores camera commands while its container has no
+     size (hidden tab, collapsed panel, a pane that opens at 0×0). Remember
+     what we last asked for so it can be applied the moment size arrives —
+     otherwise the map stays frozen on its initial view forever. */
+  const setCamera = (map, intent) => {
+    cameraIntentRef.current = intent
+    const { clientWidth: w, clientHeight: h } = map.getContainer()
+    if (!w || !h) return                       // dropped — replayed on resize
+    if (intent.kind === 'fit') map.fitBounds(intent.bounds, intent.opts)
+    else                      map.flyTo(intent.opts)
+  }
 
   /* The intro watchdog rescues a stalled globe, but it must never fight the
      broker: a finished intro — or any navigation they trigger — retires it. */
@@ -210,7 +224,7 @@ export default function MapCanvas({
       started = true
       setMapReady(true)
       setTimeout(() => {
-        map.flyTo({ ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: INTRO_MS, curve: 1.32, essential: true })
+        setCamera(map, { kind: 'fly', opts: { ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: INTRO_MS, curve: 1.32, essential: true } })
         map.once('moveend', () => {
           /* Globe is only for the cinematic entry. Everything after it —
              tiles, zone fills, hours of broker panning — runs on mercator,
@@ -269,7 +283,28 @@ export default function MapCanvas({
     })
     map.on('moveend', () => { syncLayers(); repairPass() })
 
+    /* Keep the GL canvas in step with its box, and replay the camera the
+       moment a zero-sized container gains size. */
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      const hasSize = width > 0 && height > 0
+      if (!hasSize) { hadSizeRef.current = false; return }
+      map.resize()
+      if (!hadSizeRef.current) {
+        hadSizeRef.current = true
+        const intent = cameraIntentRef.current
+        if (intent) {
+          const opts = { ...intent.opts, duration: 0 }
+          if (intent.kind === 'fit') map.fitBounds(intent.bounds, opts)
+          else                       map.flyTo(opts)
+          syncLayers()
+        }
+      }
+    })
+    ro.observe(containerRef.current)
+
     return () => {
+      ro.disconnect()
       clearTimeout(startFallback)
       clearTimeout(watchdogRef.current)
       clearTimeout(repairTimer.current)
@@ -603,7 +638,11 @@ export default function MapCanvas({
 
     const bounds = boundary?.bounds ?? boundsOfPoints(zone?.points ?? [])
     if (bounds) {
-      map.fitBounds(bounds, { padding: FIT_PADDING, duration: 1400, maxZoom: 14, essential: true })
+      setCamera(map, {
+        kind: 'fit',
+        bounds,
+        opts: { padding: FIT_PADDING, duration: 1400, maxZoom: 14, essential: true },
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedArea, mapReady])

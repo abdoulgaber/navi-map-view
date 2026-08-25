@@ -478,18 +478,23 @@ export default function MapCanvas({
       const el = document.createElement('button')
       el.type = 'button'
       el.className = 'cluster-pin'
-      el.addEventListener('click', (e) => {
-        e.stopPropagation()
-        map.easeTo({
-          center: cell.lngLat,
-          zoom: Math.min(map.getZoom() + 2.2, 16),
-          duration: 700,
-        })
-      })
       const marker = new Marker({ element: el }).setLngLat(cell.lngLat).addTo(map)
       entry = { marker, el, count: null }
       clusterMarkers.current.set(id, entry)
     }
+
+    /* Re-bind every pass (assignment, not addEventListener) so the handler
+       always zooms to this bubble's CURRENT centroid and can never be lost
+       or duplicated as markers are reused across placement passes. */
+    entry.el.onclick = (e) => {
+      e.stopPropagation()
+      map.easeTo({
+        center: cell.lngLat,
+        zoom: Math.min(map.getZoom() + 2.2, 16),
+        duration: 700,
+      })
+    }
+    entry.marker.setLngLat(cell.lngLat)
     if (entry.count !== cell.count) {
       entry.count = cell.count
       entry.el.textContent = cell.count > 999 ? '999+' : String(cell.count)

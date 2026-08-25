@@ -213,8 +213,16 @@ export default function MapCanvas({
       attributionControl: { compact: true },
     })
     mapRef.current = map
-    // Support handle: lets us inspect layers/camera on a live deployment
-    if (typeof window !== 'undefined') window.__naviMap = map
+    // Support handles: inspect layers/camera and the pending camera intent
+    // on a live deployment when diagnosing a stuck view.
+    if (typeof window !== 'undefined') {
+      window.__naviMap = map
+      window.__naviDebug = {
+        intent:  () => cameraIntentRef.current,
+        hadSize: () => hadSizeRef.current,
+        clusters: () => clusterMarkers.current.size,
+      }
+    }
 
     /* Markers/layers only need the STYLE, not every tile — gating on 'load'
        would leave the map empty whenever tiles are slow to arrive. */
@@ -310,6 +318,14 @@ export default function MapCanvas({
           const opts = { ...intent.opts, duration: 0 }
           if (intent.kind === 'fit') map.fitBounds(intent.bounds, opts)
           else                       map.flyTo(opts)
+          syncLayers()
+        } else if (map.getZoom() <= GLOBE_VIEW.zoom + 0.05) {
+          /* No intent recorded, yet we are still parked on the opening
+             globe: the intro was dropped while the container had no size.
+             Land on Egypt so the broker never faces an empty sphere. */
+          map.flyTo({ ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: 0 })
+          disarmWatchdog()
+          setIntroDone(true)
           syncLayers()
         }
       }

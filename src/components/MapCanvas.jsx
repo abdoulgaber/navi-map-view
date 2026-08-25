@@ -304,36 +304,44 @@ export default function MapCanvas({
     }
     map.getContainer().addEventListener('click', onContainerClick, true)
 
-    /* Keep the GL canvas in step with its box, and replay the camera the
-       moment a zero-sized container gains size. */
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect
-      const hasSize = width > 0 && height > 0
-      if (!hasSize) { hadSizeRef.current = false; return }
-      map.resize()
-      if (!hadSizeRef.current) {
-        hadSizeRef.current = true
-        const intent = cameraIntentRef.current
-        if (intent) {
-          const opts = { ...intent.opts, duration: 0 }
-          if (intent.kind === 'fit') map.fitBounds(intent.bounds, opts)
-          else                       map.flyTo(opts)
-          syncLayers()
-        } else if (map.getZoom() <= GLOBE_VIEW.zoom + 0.05) {
-          /* No intent recorded, yet we are still parked on the opening
-             globe: the intro was dropped while the container had no size.
-             Land on Egypt so the broker never faces an empty sphere. */
-          map.flyTo({ ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: 0 })
-          disarmWatchdog()
-          setIntroDone(true)
-          syncLayers()
-        }
+    /* Recover from a zero-sized container. MapLibre drops camera commands
+       while it has no box, so the intro (or an area fit) can be lost; when
+       size finally arrives we replay it. ResizeObserver is the primary
+       signal, but some embedded/backgrounded views throttle it, so the
+       map's own resize event and a bounded poll cover that case too. */
+    const recoverCamera = () => {
+      const { clientWidth: w, clientHeight: h } = map.getContainer()
+      if (!w || !h) { hadSizeRef.current = false; return false }
+      if (hadSizeRef.current) return true
+      hadSizeRef.current = true
+      try { map.resize() } catch { /* keep going — the replay matters more */ }
+
+      const intent = cameraIntentRef.current
+      if (intent) {
+        const opts = { ...intent.opts, duration: 0 }
+        if (intent.kind === 'fit') map.fitBounds(intent.bounds, opts)
+        else                       map.flyTo(opts)
+      } else if (map.getZoom() <= GLOBE_VIEW.zoom + 0.05) {
+        /* Still parked on the opening globe with nothing pending: the intro
+           was dropped. Land on Egypt so nobody faces an empty sphere. */
+        map.flyTo({ ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: 0 })
       }
-    })
+      disarmWatchdog()
+      setIntroDone(true)
+      syncLayers()
+      return true
+    }
+
+    const ro = new ResizeObserver(() => recoverCamera())
     ro.observe(containerRef.current)
+    map.on('resize', recoverCamera)
+    const sizePoll = setInterval(() => { if (recoverCamera()) clearInterval(sizePoll) }, 800)
+    const sizePollStop = setTimeout(() => clearInterval(sizePoll), 30000)
 
     return () => {
       map.getContainer().removeEventListener('click', onContainerClick, true)
+      clearInterval(sizePoll)
+      clearTimeout(sizePollStop)
       ro.disconnect()
       clearTimeout(startFallback)
       clearTimeout(watchdogRef.current)

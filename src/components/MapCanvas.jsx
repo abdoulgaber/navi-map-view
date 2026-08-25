@@ -283,6 +283,19 @@ export default function MapCanvas({
     })
     map.on('moveend', () => { syncLayers(); repairPass() })
 
+    /* Delegated cluster clicks — one listener for every bubble, present or
+       future, so a rebuilt marker can never lose its zoom-in behaviour. */
+    const onContainerClick = (e) => {
+      const bubble = e.target?.closest?.('.cluster-pin')
+      if (!bubble) return
+      const lng = Number(bubble.dataset.clng)
+      const lat = Number(bubble.dataset.clat)
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
+      e.stopPropagation()
+      map.easeTo({ center: [lng, lat], zoom: Math.min(map.getZoom() + 2.2, 16), duration: 700 })
+    }
+    map.getContainer().addEventListener('click', onContainerClick, true)
+
     /* Keep the GL canvas in step with its box, and replay the camera the
        moment a zero-sized container gains size. */
     const ro = new ResizeObserver(([entry]) => {
@@ -304,6 +317,7 @@ export default function MapCanvas({
     ro.observe(containerRef.current)
 
     return () => {
+      map.getContainer().removeEventListener('click', onContainerClick, true)
       ro.disconnect()
       clearTimeout(startFallback)
       clearTimeout(watchdogRef.current)
@@ -518,17 +532,11 @@ export default function MapCanvas({
       clusterMarkers.current.set(id, entry)
     }
 
-    /* Re-bind every pass (assignment, not addEventListener) so the handler
-       always zooms to this bubble's CURRENT centroid and can never be lost
-       or duplicated as markers are reused across placement passes. */
-    entry.el.onclick = (e) => {
-      e.stopPropagation()
-      map.easeTo({
-        center: cell.lngLat,
-        zoom: Math.min(map.getZoom() + 2.2, 16),
-        duration: 700,
-      })
-    }
+    /* The zoom target travels on the element itself and is handled by a
+       delegated listener on the map container (see 'click' below). Binding
+       per element proved fragile as markers are reused across passes. */
+    entry.el.dataset.clng = cell.lngLat[0]
+    entry.el.dataset.clat = cell.lngLat[1]
     entry.marker.setLngLat(cell.lngLat)
     if (entry.count !== cell.count) {
       entry.count = cell.count

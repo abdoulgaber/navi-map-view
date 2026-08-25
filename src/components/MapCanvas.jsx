@@ -458,7 +458,14 @@ export default function MapCanvas({
   const repairPass = () => {
     const map = mapRef.current
     if (!map || map.getZoom() < PIN_ZOOM) return
-    requestAnimationFrame(() => {
+
+    /* Run after the browser has laid the markers out. rAF is the right
+       signal, but it is throttled in background/embedded views — a timeout
+       guard makes sure the measured repair still happens there. */
+    let ran = false
+    const runRepair = () => {
+      if (ran) return
+      ran = true
       /* Source markers from the LIVE DOM (not a cached order array, which
          can go stale between passes) and sort by the priority stamped on
          each element, so every rendered marker is always checked. */
@@ -487,7 +494,9 @@ export default function MapCanvas({
         hiddenRef.current = total
         setHiddenCount(total)
       }
-    })
+    }
+    requestAnimationFrame(runRepair)
+    setTimeout(runRepair, 40)
   }
 
   /* Single place that mutates a marker's render mode */

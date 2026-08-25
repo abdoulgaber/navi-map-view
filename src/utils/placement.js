@@ -36,10 +36,15 @@ const rectAt = (pt, w, h) => ({
  *          reused by the DOM repair pass so demotions stay consistent.
  */
 export function computePlacements(entries, popularity = new Map(), selectedId = null) {
-  // Priority: selected → busiest area → incoming (list sort) order
+  /* Priority: selected → cluster bubbles (they speak for many projects)
+     → busiest area → incoming (list sort) order */
   const ordered = entries.map((e, i) => ({ ...e, i })).sort((a, b) => {
     if (a.id === selectedId) return -1
     if (b.id === selectedId) return 1
+    const ac = a.kind === 'cluster' ? 1 : 0
+    const bc = b.kind === 'cluster' ? 1 : 0
+    if (ac !== bc) return bc - ac
+    if (ac && bc) return (b.count ?? 0) - (a.count ?? 0)
     const pd = (popularity.get(b.area) ?? 0) - (popularity.get(a.area) ?? 0)
     return pd !== 0 ? pd : a.i - b.i
   })
@@ -48,21 +53,29 @@ export function computePlacements(entries, popularity = new Map(), selectedId = 
   const modes  = new Map()
   const leftovers = []
 
-  // Tier 1 — price pills
+  // Tier 1 — cluster bubbles and price pills
   for (const e of ordered) {
-    const rect = rectAt(e, estimatePillW(e.label) + PILL_GAP, PILL_H + PILL_GAP)
+    const w = e.kind === 'cluster' ? (e.size ?? 40) + PILL_GAP : estimatePillW(e.label) + PILL_GAP
+    const h = e.kind === 'cluster' ? (e.size ?? 40) + PILL_GAP : PILL_H + PILL_GAP
+    const rect = rectAt(e, w, h)
     if (placed.some(r => intersects(rect, r))) {
       leftovers.push(e)
     } else {
       placed.push(rect)
-      modes.set(e.id, 'pill')
+      modes.set(e.id, e.kind === 'cluster' ? 'bubble' : 'pill')
     }
   }
 
-  // Tier 2 — dots (tested against pills *and* other dots)
+  // Tier 2 — dots (tested against pills *and* other dots).
+  // A cluster never degrades to a dot: a dot would claim "one project here".
   const dotBox = DOT_SIZE + DOT_GAP + HOVER_ROOM
   let hidden = 0
   for (const e of leftovers) {
+    if (e.kind === 'cluster') {
+      modes.set(e.id, 'hidden')
+      hidden += e.count ?? 1
+      continue
+    }
     const rect = rectAt(e, dotBox, dotBox)
     if (placed.some(r => intersects(rect, r))) {
       modes.set(e.id, 'hidden')   // Tier 3 — never stack
@@ -87,13 +100,17 @@ export function computePlacements(entries, popularity = new Map(), selectedId = 
  * @param gap      minimum breathing room between rendered markers (px)
  * @returns number of markers demoted to hidden
  */
-export function repairOverlaps(order, get, gap = 6) {
-  const accepted = []
-  let hidden = 0
+/**
+ * @param fixedRects DOMRect-like boxes that are already on screen and must
+ *                   not move (cluster bubbles) — everything else yields.
+ */
+export function repairOverlaps(order, get, gap = 6, fixedRects = []) {
   const pad = (r) => ({
     x1: r.left - gap / 2, y1: r.top - gap / 2,
     x2: r.right + gap / 2, y2: r.bottom + gap / 2,
   })
+  const accepted = fixedRects.map(pad)
+  let hidden = 0
 
   for (const id of order) {
     const m = get(id)

@@ -86,6 +86,10 @@ const shortPrice = (v) =>
 /* Chips carry the project NAME — brokers recognise projects by name, and
    the exact price is one hover away on the quick-view card. Long names are
    clipped so a single chip can never hog the viewport. */
+/* Neighbours closer than this on screen become one bubble */
+const CLUSTER_PX = 78
+const clusterSize = (n) => (n < 10 ? 38 : n < 50 ? 46 : n < 200 ? 54 : 62)
+
 const MAX_LABEL = 20
 const pinLabel = (p) =>
   p.name.length > MAX_LABEL ? `${p.name.slice(0, MAX_LABEL - 1).trimEnd()}…` : p.name
@@ -141,7 +145,8 @@ export default function MapCanvas({
   const containerRef  = useRef(null)
   const mapRef        = useRef(null)
   const zoneMarkers   = useRef([])
-  const pinMarkers    = useRef(new Map())   // project.id → { marker, el, mode }
+  const pinMarkers     = useRef(new Map())  // project.id → { marker, el, mode }
+  const clusterMarkers = useRef(new Map())  // cell key   → { marker, el, count }
   const popupRef      = useRef(null)
   const projectsRef   = useRef(projects)
   const zonesRef      = useRef(zones)
@@ -286,6 +291,8 @@ export default function MapCanvas({
     if (!showPins) {
       pinMarkers.current.forEach(entry => entry.marker.remove())
       pinMarkers.current.clear()
+      clusterMarkers.current.forEach(entry => entry.marker.remove())
+      clusterMarkers.current.clear()
       popupRef.current?.remove()
       return
     }
@@ -294,30 +301,87 @@ export default function MapCanvas({
     // bounds are unreliable under globe projection + camera padding)
     const { clientWidth: W, clientHeight: H } = map.getContainer()
     const MARGIN = 80
-    const entries = []
-    const byId    = new Map()
+    const inView = []
     for (const p of projectsRef.current) {
       const pt = map.project([p.lng, p.lat])
       if (pt.x < -MARGIN || pt.x > W + MARGIN || pt.y < -MARGIN || pt.y > H + MARGIN) continue
-      const label = pinLabel(p)
-      entries.push({ id: p.id, x: pt.x, y: pt.y, label, area: p.location })
-      byId.set(p.id, { p, label })
+      inView.push({ p, pt })
     }
 
-    /* Pills → dots → hidden, never stacked. Priority: selected project,
-       then busiest areas (density = broker demand), then list sort order. */
+    /* Group neighbours into one bubble before anything is placed. The grid
+       is geographic (sized to ~CLUSTER_PX at the current zoom) so a cell —
+       and therefore a bubble — keeps its identity and position while the
+       broker pans; only zooming re-groups. */
+    const zoom     = map.getZoom()
+    const degPerPx = 360 / (256 * Math.pow(2, zoom))
+    const cellLng  = CLUSTER_PX * degPerPx
+    const cells    = new Map()
+    for (const { p, pt } of inView) {
+      const cellLat = cellLng * Math.max(Math.cos((p.lat * Math.PI) / 180), 0.2)
+      const key = `${Math.floor(p.lng / cellLng)}:${Math.floor(p.lat / cellLat)}`
+      let cell = cells.get(key)
+      if (!cell) { cell = { key, members: [], sx: 0, sy: 0, lng: 0, lat: 0 }; cells.set(key, cell) }
+      cell.members.push(p)
+      cell.sx += pt.x; cell.sy += pt.y
+      cell.lng += p.lng; cell.lat += p.lat
+    }
+
+    const entries = []
+    const byId    = new Map()
+    const clusterCells = new Map()
+    for (const cell of cells.values()) {
+      const n = cell.members.length
+      if (n === 1) {
+        const p  = cell.members[0]
+        const pt = map.project([p.lng, p.lat])
+        const label = pinLabel(p)
+        entries.push({ id: p.id, x: pt.x, y: pt.y, label, area: p.location })
+        byId.set(p.id, { p, label })
+      } else {
+        const id = `c:${cell.key}`
+        entries.push({
+          id, kind: 'cluster', count: n,
+          x: cell.sx / n, y: cell.sy / n,
+          label: String(n),
+          size: clusterSize(n),
+          area: cell.members[0].location,
+        })
+        clusterCells.set(id, {
+          count: n,
+          lngLat: [cell.lng / n, cell.lat / n],
+        })
+      }
+    }
+
+    /* Bubbles → pills → dots → hidden, never stacked. Priority: selected
+       project, then clusters, then busiest areas, then list sort order. */
     const popularity = new Map(zonesRef.current.map(z => [z.area, z.count]))
     const { modes, order, hidden } = computePlacements(entries, popularity, selectedRef.current?.id)
     orderRef.current = order
 
     const visible = new Set(byId.keys())
     const rank = new Map(order.map((id, i) => [id, i]))
+    const liveClusters = new Set()
     for (const [id, mode] of modes) {
+      if (clusterCells.has(id)) {
+        if (mode === 'bubble') {
+          ensureCluster(id, clusterCells.get(id), map)
+          liveClusters.add(id)
+        }
+        continue
+      }
       const { p, label } = byId.get(id)
       ensurePin(p, map, mode, label)
       const entry = pinMarkers.current.get(id)
       if (entry) entry.priority = rank.get(id) ?? 1e9
     }
+
+    clusterMarkers.current.forEach((entry, id) => {
+      if (!liveClusters.has(id)) {
+        entry.marker.remove()
+        clusterMarkers.current.delete(id)
+      }
+    })
 
     if (hidden !== hiddenRef.current) {
       hiddenRef.current = hidden
@@ -360,6 +424,10 @@ export default function MapCanvas({
           .sort((a, b) => (a[1].priority ?? 1e9) - (b[1].priority ?? 1e9))
           .map(([id]) => id)
 
+        // cluster bubbles are fixed — pills and dots yield around them
+        const fixed = [...clusterMarkers.current.values()]
+          .map(e => e.el.getBoundingClientRect())
+
         const demoted = repairOverlaps(live, (id) => {
           const entry = pinMarkers.current.get(id)
           if (!entry) return null
@@ -368,7 +436,7 @@ export default function MapCanvas({
             rect: () => entry.el.getBoundingClientRect(),
             setMode: (m) => applyMode(entry, m),
           }
-        })
+        }, 6, fixed)
         extra += demoted
         if (demoted === 0) break   // stable
       }
@@ -389,6 +457,36 @@ export default function MapCanvas({
     entry.el.textContent   = mode === 'pill' ? entry.label : ''
     entry.el.style.display = mode === 'hidden' ? 'none' : ''
     entry.el.setAttribute('aria-label', entry.aria ?? entry.label)
+  }
+
+  /* Cluster bubble — how many projects sit here, click to zoom into them */
+  const ensureCluster = (id, cell, map) => {
+    let entry = clusterMarkers.current.get(id)
+    if (!entry) {
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.className = 'cluster-pin'
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        map.easeTo({
+          center: cell.lngLat,
+          zoom: Math.min(map.getZoom() + 2.2, 16),
+          duration: 700,
+        })
+      })
+      const marker = new Marker({ element: el }).setLngLat(cell.lngLat).addTo(map)
+      entry = { marker, el, count: null }
+      clusterMarkers.current.set(id, entry)
+    }
+    if (entry.count !== cell.count) {
+      entry.count = cell.count
+      entry.el.textContent = cell.count > 999 ? '999+' : String(cell.count)
+      const s = clusterSize(cell.count)
+      entry.el.style.width  = `${s}px`
+      entry.el.style.height = `${s}px`
+      entry.el.setAttribute('aria-label', `${cell.count} projects here — zoom in`)
+    }
+    return entry
   }
 
   const ensurePin = (project, map, mode, label) => {
@@ -494,6 +592,8 @@ export default function MapCanvas({
     if (!mapReady) return
     pinMarkers.current.forEach(entry => entry.marker.remove())
     pinMarkers.current.clear()
+    clusterMarkers.current.forEach(entry => entry.marker.remove())
+    clusterMarkers.current.clear()
     popupRef.current?.remove()
     syncLayers(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps

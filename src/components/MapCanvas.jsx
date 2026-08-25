@@ -86,23 +86,48 @@ const shortPrice = (v) =>
 /* Chips carry the project NAME — brokers recognise projects by name, and
    the exact price is one hover away on the quick-view card. Long names are
    clipped so a single chip can never hog the viewport. */
-/* Neighbours closer than this on screen become one bubble */
-const CLUSTER_PX = 78
-const clusterSize = (n) => (n < 10 ? 38 : n < 50 ? 46 : n < 200 ? 54 : 62)
-
 const MAX_LABEL = 20
 const pinLabel = (p) =>
   p.name.length > MAX_LABEL ? `${p.name.slice(0, MAX_LABEL - 1).trimEnd()}…` : p.name
 
-const hoverCardHTML = (p) => `
-  <div class="pin-card">
-    <div class="pin-card-img">${p.type === 'Commercial' ? '🏢' : '🏙'}</div>
-    <div class="pin-card-body">
-      <strong>${p.name}</strong>
-      <span>${p.developer}</span>
-      <em>From ${p.price}</em>
+/* Photo pool for the hover card — deterministic per project so a chip
+   always previews the same image. */
+const PHOTOS = [
+  'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=720&q=70',
+  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=720&q=70',
+  'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=720&q=70',
+  'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=720&q=70',
+]
+
+const BADGE_STYLE = {
+  Trendy:    { bg: '#EF476F', icon: '🔥' },
+  Incentive: { bg: '#FF6006', icon: '💰' },
+}
+
+const escapeHTML = (s) => String(s).replace(/[&<>"]/g, c => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+))
+
+const hoverCardHTML = (p) => {
+  const badges = p.badges.map(b => {
+    const cfg = BADGE_STYLE[b]
+    return `<span class="pin-card-badge" style="background:${cfg.bg}">${cfg.icon} ${b}</span>`
+  }).join('')
+  return `
+  <article class="pin-card">
+    <div class="pin-card-media" style="background-image:url('${PHOTOS[p.id % PHOTOS.length]}')">
+      <div class="pin-card-badges">${badges}</div>
     </div>
-  </div>`
+    <div class="pin-card-body">
+      <div class="pin-card-head">
+        <span class="pin-card-logo">${escapeHTML(p.developer.slice(0, 2).toUpperCase())}</span>
+        <span class="pin-card-dev">${escapeHTML(p.developer)}</span>
+      </div>
+      <h4 class="pin-card-name">${escapeHTML(p.name)}</h4>
+      <p class="pin-card-price">Starting ${escapeHTML(p.price)}</p>
+    </div>
+  </article>`
+}
 
 /* Real administrative borders for every area OSM has one for. Areas
    without an official polygon are intentionally left unshaded. */
@@ -146,7 +171,6 @@ export default function MapCanvas({
   const mapRef        = useRef(null)
   const zoneMarkers   = useRef([])
   const pinMarkers     = useRef(new Map())  // project.id → { marker, el, mode }
-  const clusterMarkers = useRef(new Map())  // cell key   → { marker, el, count }
   const popupRef      = useRef(null)
   const projectsRef   = useRef(projects)
   const zonesRef      = useRef(zones)
@@ -169,9 +193,13 @@ export default function MapCanvas({
      what we last asked for so it can be applied the moment size arrives —
      otherwise the map stays frozen on its initial view forever. */
   const setCamera = (map, intent) => {
-    cameraIntentRef.current = intent
     const { clientWidth: w, clientHeight: h } = map.getContainer()
-    if (!w || !h) return                       // dropped — replayed on resize
+    if (!w || !h) {
+      // dropped: no viewport to animate into — recovery replays it later
+      cameraIntentRef.current = { ...intent, applied: false }
+      return
+    }
+    cameraIntentRef.current = { ...intent, applied: true }
     if (intent.kind === 'fit') map.fitBounds(intent.bounds, intent.opts)
     else                      map.flyTo(intent.opts)
   }
@@ -220,7 +248,6 @@ export default function MapCanvas({
       window.__naviDebug = {
         intent:  () => cameraIntentRef.current,
         hadSize: () => hadSizeRef.current,
-        clusters: () => clusterMarkers.current.size,
       }
     }
 
@@ -291,19 +318,6 @@ export default function MapCanvas({
     })
     map.on('moveend', () => { syncLayers(); repairPass() })
 
-    /* Delegated cluster clicks — one listener for every bubble, present or
-       future, so a rebuilt marker can never lose its zoom-in behaviour. */
-    const onContainerClick = (e) => {
-      const bubble = e.target?.closest?.('.cluster-pin')
-      if (!bubble) return
-      const lng = Number(bubble.dataset.clng)
-      const lat = Number(bubble.dataset.clat)
-      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
-      e.stopPropagation()
-      map.easeTo({ center: [lng, lat], zoom: Math.min(map.getZoom() + 2.2, 16), duration: 700 })
-    }
-    map.getContainer().addEventListener('click', onContainerClick, true)
-
     /* Recover from a zero-sized container. MapLibre drops camera commands
        while it has no box, so the intro (or an area fit) can be lost; when
        size finally arrives we replay it. ResizeObserver is the primary
@@ -316,19 +330,19 @@ export default function MapCanvas({
       hadSizeRef.current = true
       try { map.resize() } catch { /* keep going — the replay matters more */ }
 
+      /* Replay ONLY a camera move that never ran for want of a viewport.
+         On a healthy load the intro flight is already playing and must not
+         be cut short — that would kill the opening animation. */
       const intent = cameraIntentRef.current
-      if (intent) {
+      if (intent && intent.applied === false) {
         const opts = { ...intent.opts, duration: 0 }
         if (intent.kind === 'fit') map.fitBounds(intent.bounds, opts)
         else                       map.flyTo(opts)
-      } else if (map.getZoom() <= GLOBE_VIEW.zoom + 0.05) {
-        /* Still parked on the opening globe with nothing pending: the intro
-           was dropped. Land on Egypt so nobody faces an empty sphere. */
-        map.flyTo({ ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: 0 })
+        cameraIntentRef.current = { ...intent, applied: true }
+        disarmWatchdog()
+        setIntroDone(true)
+        syncLayers()
       }
-      disarmWatchdog()
-      setIntroDone(true)
-      syncLayers()
       return true
     }
 
@@ -339,7 +353,6 @@ export default function MapCanvas({
     const sizePollStop = setTimeout(() => clearInterval(sizePoll), 30000)
 
     return () => {
-      map.getContainer().removeEventListener('click', onContainerClick, true)
       clearInterval(sizePoll)
       clearTimeout(sizePollStop)
       ro.disconnect()
@@ -376,8 +389,6 @@ export default function MapCanvas({
     if (!showPins) {
       pinMarkers.current.forEach(entry => entry.marker.remove())
       pinMarkers.current.clear()
-      clusterMarkers.current.forEach(entry => entry.marker.remove())
-      clusterMarkers.current.clear()
       popupRef.current?.remove()
       return
     }
@@ -393,80 +404,29 @@ export default function MapCanvas({
       inView.push({ p, pt })
     }
 
-    /* Group neighbours into one bubble before anything is placed. The grid
-       is geographic (sized to ~CLUSTER_PX at the current zoom) so a cell —
-       and therefore a bubble — keeps its identity and position while the
-       broker pans; only zooming re-groups. */
-    const zoom     = map.getZoom()
-    const degPerPx = 360 / (256 * Math.pow(2, zoom))
-    const cellLng  = CLUSTER_PX * degPerPx
-    const cells    = new Map()
-    for (const { p, pt } of inView) {
-      const cellLat = cellLng * Math.max(Math.cos((p.lat * Math.PI) / 180), 0.2)
-      const key = `${Math.floor(p.lng / cellLng)}:${Math.floor(p.lat / cellLat)}`
-      let cell = cells.get(key)
-      if (!cell) { cell = { key, members: [], sx: 0, sy: 0, lng: 0, lat: 0 }; cells.set(key, cell) }
-      cell.members.push(p)
-      cell.sx += pt.x; cell.sy += pt.y
-      cell.lng += p.lng; cell.lat += p.lat
-    }
-
     const entries = []
     const byId    = new Map()
-    const clusterCells = new Map()
-    for (const cell of cells.values()) {
-      const n = cell.members.length
-      if (n === 1) {
-        const p  = cell.members[0]
-        const pt = map.project([p.lng, p.lat])
-        const label = pinLabel(p)
-        entries.push({ id: p.id, x: pt.x, y: pt.y, label, area: p.location })
-        byId.set(p.id, { p, label })
-      } else {
-        const id = `c:${cell.key}`
-        entries.push({
-          id, kind: 'cluster', count: n,
-          x: cell.sx / n, y: cell.sy / n,
-          label: String(n),
-          size: clusterSize(n),
-          area: cell.members[0].location,
-        })
-        clusterCells.set(id, {
-          count: n,
-          lngLat: [cell.lng / n, cell.lat / n],
-        })
-      }
+    for (const { p, pt } of inView) {
+      const label = pinLabel(p)
+      entries.push({ id: p.id, x: pt.x, y: pt.y, label, area: p.location })
+      byId.set(p.id, { p, label })
     }
 
-    /* Bubbles → pills → dots → hidden, never stacked. Priority: selected
-       project, then clusters, then busiest areas, then list sort order. */
+    /* Name chips → dots → hidden, never stacked. Priority: selected
+       project, then busiest areas (density = broker demand), then the
+       list's current sort order. */
     const popularity = new Map(zonesRef.current.map(z => [z.area, z.count]))
     const { modes, order, hidden } = computePlacements(entries, popularity, selectedRef.current?.id)
     orderRef.current = order
 
     const visible = new Set(byId.keys())
     const rank = new Map(order.map((id, i) => [id, i]))
-    const liveClusters = new Set()
     for (const [id, mode] of modes) {
-      if (clusterCells.has(id)) {
-        if (mode === 'bubble') {
-          ensureCluster(id, clusterCells.get(id), map)
-          liveClusters.add(id)
-        }
-        continue
-      }
       const { p, label } = byId.get(id)
       ensurePin(p, map, mode, label)
       const entry = pinMarkers.current.get(id)
       if (entry) entry.priority = rank.get(id) ?? 1e9
     }
-
-    clusterMarkers.current.forEach((entry, id) => {
-      if (!liveClusters.has(id)) {
-        entry.marker.remove()
-        clusterMarkers.current.delete(id)
-      }
-    })
 
     if (hidden !== hiddenRef.current) {
       hiddenRef.current = hidden
@@ -509,10 +469,6 @@ export default function MapCanvas({
           .sort((a, b) => (a[1].priority ?? 1e9) - (b[1].priority ?? 1e9))
           .map(([id]) => id)
 
-        // cluster bubbles are fixed — pills and dots yield around them
-        const fixed = [...clusterMarkers.current.values()]
-          .map(e => e.el.getBoundingClientRect())
-
         const demoted = repairOverlaps(live, (id) => {
           const entry = pinMarkers.current.get(id)
           if (!entry) return null
@@ -521,7 +477,7 @@ export default function MapCanvas({
             rect: () => entry.el.getBoundingClientRect(),
             setMode: (m) => applyMode(entry, m),
           }
-        }, 6, fixed)
+        })
         extra += demoted
         if (demoted === 0) break   // stable
       }
@@ -544,35 +500,6 @@ export default function MapCanvas({
     entry.el.setAttribute('aria-label', entry.aria ?? entry.label)
   }
 
-  /* Cluster bubble — how many projects sit here, click to zoom into them */
-  const ensureCluster = (id, cell, map) => {
-    let entry = clusterMarkers.current.get(id)
-    if (!entry) {
-      const el = document.createElement('button')
-      el.type = 'button'
-      el.className = 'cluster-pin'
-      const marker = new Marker({ element: el }).setLngLat(cell.lngLat).addTo(map)
-      entry = { marker, el, count: null }
-      clusterMarkers.current.set(id, entry)
-    }
-
-    /* The zoom target travels on the element itself and is handled by a
-       delegated listener on the map container (see 'click' below). Binding
-       per element proved fragile as markers are reused across passes. */
-    entry.el.dataset.clng = cell.lngLat[0]
-    entry.el.dataset.clat = cell.lngLat[1]
-    entry.marker.setLngLat(cell.lngLat)
-    if (entry.count !== cell.count) {
-      entry.count = cell.count
-      entry.el.textContent = cell.count > 999 ? '999+' : String(cell.count)
-      const s = clusterSize(cell.count)
-      entry.el.style.width  = `${s}px`
-      entry.el.style.height = `${s}px`
-      entry.el.setAttribute('aria-label', `${cell.count} projects here — zoom in`)
-    }
-    return entry
-  }
-
   const ensurePin = (project, map, mode, label) => {
     let entry = pinMarkers.current.get(project.id)
 
@@ -580,6 +507,7 @@ export default function MapCanvas({
       const el = document.createElement('button')
       el.type = 'button'
       el.addEventListener('mouseenter', () => {
+        el.classList.add('map-pin--hover')
         popupRef.current?.remove()
         popupRef.current = new Popup({
           closeButton: false,
@@ -592,7 +520,10 @@ export default function MapCanvas({
           .setHTML(hoverCardHTML(project))
           .addTo(map)
       })
-      el.addEventListener('mouseleave', () => popupRef.current?.remove())
+      el.addEventListener('mouseleave', () => {
+        el.classList.remove('map-pin--hover')
+        popupRef.current?.remove()
+      })
       el.addEventListener('click', (e) => {
         e.stopPropagation()
         callbacksRef.current.onSelectProject(project)
@@ -684,8 +615,6 @@ export default function MapCanvas({
     if (!mapReady) return
     pinMarkers.current.forEach(entry => entry.marker.remove())
     pinMarkers.current.clear()
-    clusterMarkers.current.forEach(entry => entry.marker.remove())
-    clusterMarkers.current.clear()
     popupRef.current?.remove()
     syncLayers(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps

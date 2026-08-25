@@ -246,9 +246,7 @@ export default function MapCanvas({
     // prefer above the chip, fall back to below, then clamp inside
     let top = a.top - c.height - HOVER_GAP
     if (top < area.top) top = a.bottom + HOVER_GAP
-    if (top + c.height > area.bottom) {
-      top = Math.max(area.top, area.bottom - c.height)
-    }
+    top = Math.min(Math.max(top, area.top), Math.max(area.top, area.bottom - c.height))
 
     let left = a.left + a.width / 2 - c.width / 2      // centred on the chip
     left = Math.min(Math.max(left, area.left), Math.max(area.left, area.right - c.width))

@@ -35,7 +35,11 @@ const SAT_STYLE = {
   },
   layers: [{ id: 'esri', type: 'raster', source: 'esri' }],
 }
-const EGYPT_VIEW  = { center: [29.9, 26.9], zoom: 5.55 }
+/* The market lives in the northern belt — North Coast ⇢ Delta ⇢ Greater
+   Cairo ⇢ New Capital / Ain Sokhna. The intro lands there rather than on
+   the whole country, most of which is empty desert. */
+const NORTH_EGYPT_BOUNDS = [[27.6, 29.25], [32.75, 31.75]]  // [[w,s],[e,n]]
+const NORTH_EGYPT_VIEW   = { center: [30.2, 30.5], zoom: 6.9 } // instant fallback
 const GLOBE_VIEW  = { center: [8, 15], zoom: 1.4 }
 const PIN_ZOOM    = 8.3
 const ZONE_ZOOM   = 10.8
@@ -259,7 +263,18 @@ export default function MapCanvas({
       started = true
       setMapReady(true)
       setTimeout(() => {
-        setCamera(map, { kind: 'fly', opts: { ...EGYPT_VIEW, offset: PANEL_OFFSET, duration: INTRO_MS, curve: 1.32, essential: true } })
+        /* Frame the northern belt for THIS viewport, but fly with a plain
+           center/zoom: camera padding under globe projection corrupts the
+           transform, so we resolve the padded framing up front instead. */
+        let target = NORTH_EGYPT_VIEW
+        try {
+          const cam = map.cameraForBounds(NORTH_EGYPT_BOUNDS, { padding: FIT_PADDING })
+          if (cam) target = { center: cam.center, zoom: Math.min(cam.zoom, 8) }
+        } catch { /* keep the fallback framing */ }
+        setCamera(map, {
+          kind: 'fly',
+          opts: { ...target, duration: INTRO_MS, curve: 1.32, essential: true },
+        })
         map.once('moveend', () => {
           /* Globe is only for the cinematic entry. Everything after it —
              tiles, zone fills, hours of broker panning — runs on mercator,
@@ -285,9 +300,9 @@ export default function MapCanvas({
          navigation disarms it (see disarmWatchdog). */
       watchdogRef.current = setTimeout(() => {
         if (!mapRef.current || introDoneRef.current) return
-        if (Math.abs(map.getZoom() - EGYPT_VIEW.zoom) > 1) {
+        if (map.getZoom() < GLOBE_VIEW.zoom + 1.5) {
           try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
-          map.jumpTo({ ...EGYPT_VIEW })
+          map.jumpTo({ ...NORTH_EGYPT_VIEW })
           setIntroDone(true)
           syncLayers()
         }

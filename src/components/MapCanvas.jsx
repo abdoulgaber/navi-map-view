@@ -159,6 +159,15 @@ export default function MapCanvas({
   const selectedAreaRef = useRef(null)
   const styleReadyRef   = useRef(false)  // set by the style.load event
   const pendingDrawRef  = useRef([])
+  const watchdogRef     = useRef(null)
+  const introDoneRef    = useRef(false)
+
+  /* The intro watchdog rescues a stalled globe, but it must never fight the
+     broker: a finished intro — or any navigation they trigger — retires it. */
+  const disarmWatchdog = () => {
+    introDoneRef.current = true
+    clearTimeout(watchdogRef.current)
+  }
 
   /* Sources/layers may only be added once the style has loaded. Track that
      with the style.load EVENT — never with isStyleLoaded(), which stays
@@ -196,7 +205,6 @@ export default function MapCanvas({
     /* Markers/layers only need the STYLE, not every tile — gating on 'load'
        would leave the map empty whenever tiles are slow to arrive. */
     let started = false
-    let watchdog = null
     const start = () => {
       if (started) return
       started = true
@@ -208,6 +216,7 @@ export default function MapCanvas({
              tiles, zone fills, hours of broker panning — runs on mercator,
              which is the widely-supported path on every GPU/driver. */
           try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
+          disarmWatchdog()
           setIntroDone(true)
           syncLayers()
         })
@@ -215,15 +224,18 @@ export default function MapCanvas({
         // if the camera event is missed
         setTimeout(() => {
           try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
+          disarmWatchdog()
           setIntroDone(true)
         }, INTRO_MS + 1500)
       }, 400)
 
       /* Watchdog — if the camera never reaches Egypt (globe transform can
          stall on some GPUs/drivers), drop to mercator and show Egypt
-         directly rather than leaving the broker on a blank sphere. */
-      watchdog = setTimeout(() => {
-        if (!mapRef.current) return
+         directly rather than leaving the broker on a blank sphere.
+         It must never fight the broker: any completed intro or user
+         navigation disarms it (see disarmWatchdog). */
+      watchdogRef.current = setTimeout(() => {
+        if (!mapRef.current || introDoneRef.current) return
         if (Math.abs(map.getZoom() - EGYPT_VIEW.zoom) > 1) {
           try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
           map.jumpTo({ ...EGYPT_VIEW })
@@ -259,7 +271,7 @@ export default function MapCanvas({
 
     return () => {
       clearTimeout(startFallback)
-      clearTimeout(watchdog)
+      clearTimeout(watchdogRef.current)
       clearTimeout(repairTimer.current)
       if (raf) cancelAnimationFrame(raf)
       popupRef.current?.remove()
@@ -562,6 +574,10 @@ export default function MapCanvas({
       return
     }
 
+    /* This is broker-driven navigation: retire the intro watchdog so it
+       cannot yank the camera back to the country view moments later. */
+    disarmWatchdog()
+
     /* fitBounds uses camera padding, which is only safe on mercator — make
        sure we are off the globe even if the intro's moveend never fired. */
     try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
@@ -603,6 +619,7 @@ export default function MapCanvas({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !selectedProject) return
+    disarmWatchdog()
     map.flyTo({
       center: [selectedProject.lng, selectedProject.lat],
       zoom: Math.max(map.getZoom(), 13.5),

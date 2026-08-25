@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Map as MapGL, Marker, Popup, setWorkerUrl } from 'maplibre-gl'
+import { Map as MapGL, Marker, setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre v6 resolves its worker at runtime via a template literal
 // (`new URL(\`./${name}\`, import.meta.url)`), which bundlers cannot see —
@@ -175,7 +175,7 @@ export default function MapCanvas({
   const mapRef        = useRef(null)
   const zoneMarkers   = useRef([])
   const pinMarkers     = useRef(new Map())  // project.id → { marker, el, mode }
-  const popupRef      = useRef(null)
+  const hoverCardRef  = useRef(null)
   const projectsRef   = useRef(projects)
   const zonesRef      = useRef(zones)
   const selectedRef   = useRef(null)
@@ -206,6 +206,61 @@ export default function MapCanvas({
     cameraIntentRef.current = { ...intent, applied: true }
     if (intent.kind === 'fit') map.fitBounds(intent.bounds, intent.opts)
     else                      map.flyTo(intent.opts)
+  }
+
+
+  /* ── Hover card ───────────────────────────────────────────────────────
+     Anchored to the CHIP and clamped to the usable interface area: it
+     flips above/below and slides sideways so it can never fall off the
+     viewport or hide behind the floating list panel.                     */
+  const HOVER_GAP    = 12
+  const HOVER_MARGIN = 12
+
+  const usableArea = () => {
+    const panel = document.querySelector('.list-panel')?.getBoundingClientRect()
+    const map   = containerRef.current?.getBoundingClientRect()
+    return {
+      left:   Math.max(panel ? panel.right + HOVER_GAP : 0, map?.left ?? 0) + HOVER_MARGIN,
+      top:    (map?.top ?? 0) + HOVER_MARGIN,
+      right:  (map?.right ?? window.innerWidth) - HOVER_MARGIN,
+      bottom: (map?.bottom ?? window.innerHeight) - HOVER_MARGIN,
+    }
+  }
+
+  const showHoverCard = (project, anchorEl) => {
+    let card = hoverCardRef.current
+    if (!card) {
+      card = document.createElement('div')
+      card.className = 'pin-hover-card'
+      document.body.appendChild(card)
+      hoverCardRef.current = card
+    }
+    card.innerHTML = hoverCardHTML(project)
+    card.style.visibility = 'hidden'
+    card.style.display    = 'block'
+
+    const c    = card.getBoundingClientRect()
+    const a    = anchorEl.getBoundingClientRect()
+    const area = usableArea()
+
+    // prefer above the chip, fall back to below, then clamp inside
+    let top = a.top - c.height - HOVER_GAP
+    if (top < area.top) top = a.bottom + HOVER_GAP
+    if (top + c.height > area.bottom) {
+      top = Math.max(area.top, area.bottom - c.height)
+    }
+
+    let left = a.left + a.width / 2 - c.width / 2      // centred on the chip
+    left = Math.min(Math.max(left, area.left), Math.max(area.left, area.right - c.width))
+
+    card.style.left = `${Math.round(left)}px`
+    card.style.top  = `${Math.round(top)}px`
+    card.style.visibility = 'visible'
+  }
+
+  const hideHoverCard = () => {
+    const card = hoverCardRef.current
+    if (card) card.style.display = 'none'
   }
 
   /* The intro watchdog rescues a stalled globe, but it must never fight the
@@ -331,6 +386,7 @@ export default function MapCanvas({
       if (raf) return
       raf = requestAnimationFrame(() => { raf = null; syncLayers() })
     })
+    map.on('movestart', hideHoverCard)
     map.on('moveend', () => { syncLayers(); repairPass() })
 
     /* Recover from a zero-sized container. MapLibre drops camera commands
@@ -368,6 +424,8 @@ export default function MapCanvas({
     const sizePollStop = setTimeout(() => clearInterval(sizePoll), 30000)
 
     return () => {
+      hoverCardRef.current?.remove()
+      hoverCardRef.current = null
       clearInterval(sizePoll)
       clearTimeout(sizePollStop)
       ro.disconnect()
@@ -375,7 +433,7 @@ export default function MapCanvas({
       clearTimeout(watchdogRef.current)
       clearTimeout(repairTimer.current)
       if (raf) cancelAnimationFrame(raf)
-      popupRef.current?.remove()
+      hideHoverCard()
       map.remove()
       mapRef.current = null
     }
@@ -404,7 +462,7 @@ export default function MapCanvas({
     if (!showPins) {
       pinMarkers.current.forEach(entry => entry.marker.remove())
       pinMarkers.current.clear()
-      popupRef.current?.remove()
+      hideHoverCard()
       return
     }
 
@@ -532,21 +590,11 @@ export default function MapCanvas({
       el.type = 'button'
       el.addEventListener('mouseenter', () => {
         el.classList.add('map-pin--hover')
-        popupRef.current?.remove()
-        popupRef.current = new Popup({
-          closeButton: false,
-          closeOnClick: false,
-          offset: 16,
-          maxWidth: 'none',
-          className: 'pin-popup',
-        })
-          .setLngLat([project.lng, project.lat])
-          .setHTML(hoverCardHTML(project))
-          .addTo(map)
+        showHoverCard(project, el)
       })
       el.addEventListener('mouseleave', () => {
         el.classList.remove('map-pin--hover')
-        popupRef.current?.remove()
+        hideHoverCard()
       })
       el.addEventListener('click', (e) => {
         e.stopPropagation()
@@ -639,7 +687,7 @@ export default function MapCanvas({
     if (!mapReady) return
     pinMarkers.current.forEach(entry => entry.marker.remove())
     pinMarkers.current.clear()
-    popupRef.current?.remove()
+    hideHoverCard()
     syncLayers(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, mapReady])

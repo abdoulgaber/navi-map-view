@@ -209,12 +209,21 @@ export default function MapView({ filters, search, sort }) {
         onSelectArea={setSelectedArea}
         compareSelection={compareSel}
       >
+        {/* Compare — NAVI hand-off button: white when idle, blue with a
+            count and a dismiss when the mode is on */}
         <div className="tools-panel">
           <button
             type="button"
-            className={`tool-btn${compareMode ? ' tool-btn--active' : ''}`}
+            className={`compare-btn${compareMode ? ' compare-btn--on' : ''}`}
             onClick={toggleCompareMode}
-          >⚖️ Compare</button>
+          >
+            Compare{compareMode && compareSel.length > 0 ? ` (${compareSel.length})` : ''}
+            {compareMode && (
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M14.5 5.5l-9 9M5.5 5.5l9 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+            )}
+          </button>
         </div>
 
         <CompareBar

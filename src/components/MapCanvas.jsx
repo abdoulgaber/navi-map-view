@@ -716,18 +716,57 @@ export default function MapCanvas({
     <div className="map-canvas">
       <div ref={containerRef} className="map-canvas-gl" />
 
-      {/* Map / Satellite toggle */}
-      <div className={`style-toggle${introDone ? ' style-toggle--visible' : ''}`}>
+      {/* Map / Satellite switcher — NAVI hand-off component */}
+      <div className={`mapmode${introDone ? ' mapmode--visible' : ''}`}>
+        <span className={`mapmode-thumb${mapType === 'sat' ? ' mapmode-thumb--right' : ''}`} />
         <button
           type="button"
-          className={`style-toggle-btn${mapType === 'map' ? ' style-toggle-btn--active' : ''}`}
+          className={`mapmode-tab${mapType === 'map' ? ' mapmode-tab--active' : ''}`}
           onClick={() => setMapType('map')}
-        >🗺️ Map</button>
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M7.5 3.75 3.6 5.2a1 1 0 0 0-.6.94v9.1c0 .7.7 1.18 1.35.94L7.5 15l5 1.25 3.55-1.45a1 1 0 0 0 .6-.94V4.76c0-.7-.7-1.18-1.35-.94L12.5 5l-5-1.25Z"
+              stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+            <path d="M7.5 3.75V15M12.5 5v11.25" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+          </svg>
+          Map
+        </button>
         <button
           type="button"
-          className={`style-toggle-btn${mapType === 'sat' ? ' style-toggle-btn--active' : ''}`}
+          className={`mapmode-tab${mapType === 'sat' ? ' mapmode-tab--active' : ''}`}
           onClick={() => setMapType('sat')}
-        >🛰️ Satellite</button>
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="m3.1 10.4 9.65-5.57a1.5 1.5 0 0 1 2.05.55l1 1.73a1.5 1.5 0 0 1-.55 2.05l-9.65 5.57a1.5 1.5 0 0 1-2.05-.55l-1-1.73a1.5 1.5 0 0 1 .55-2.05Z"
+              stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+            <path d="m8.4 12.3 1.9 4.45M6.2 16.9l3-1.4M13.4 5.6l1.2-2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+          Satellite
+        </button>
+      </div>
+
+      {/* Zoom controls — bottom of the map */}
+      <div className={`map-zoom${introDone ? ' map-zoom--visible' : ''}`}>
+        <button
+          type="button"
+          className="map-zoom-btn"
+          aria-label="Zoom in"
+          onClick={() => mapRef.current?.zoomIn({ duration: 300 })}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M10 4.5v11M4.5 10h11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="map-zoom-btn"
+          aria-label="Zoom out"
+          onClick={() => mapRef.current?.zoomOut({ duration: 300 })}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M4.5 10h11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+          </svg>
+        </button>
       </div>
 
       {/* Overflow hint — nothing is stacked, so say what's still tucked away */}

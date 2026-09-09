@@ -273,8 +273,8 @@ export default function MapCanvas({
 
     /* No viewport to measure against (hidden tab, collapsed pane): leave
        every chip exactly as it is rather than hiding the lot. */
-    const box = map.getContainer().getBoundingClientRect()
-    if (!box.width || !box.height) return
+    const view = map.getContainer().getBoundingClientRect()
+    if (!view.width || !view.height) return
 
     chips.forEach(el => { el.style.visibility = '' })
     chips.sort((a, b) => Number(b.dataset.count || 0) - Number(a.dataset.count || 0))
@@ -285,8 +285,8 @@ export default function MapCanvas({
       // both rects are viewport-relative — compare like with like
       const r = el.getBoundingClientRect()
       const offScreen =
-        r.right < box.left || r.left > box.right ||
-        r.bottom < box.top || r.top > box.bottom
+        r.right < view.left || r.left > view.right ||
+        r.bottom < view.top || r.top > view.bottom
       const box = { x1: r.left - 6, y1: r.top - 6, x2: r.right + 6, y2: r.bottom + 6 }
       const collides = taken.some(t =>
         box.x1 < t.x2 && box.x2 > t.x1 && box.y1 < t.y2 && box.y2 > t.y1)

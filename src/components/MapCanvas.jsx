@@ -376,7 +376,7 @@ export default function MapCanvas({
           try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
           disarmWatchdog()
           setIntroDone(true)
-          syncLayers()
+          syncLayers(); layoutZoneChips()
         })
         // never leave the UI chrome hidden — or the map stuck on globe —
         // if the camera event is missed
@@ -384,6 +384,7 @@ export default function MapCanvas({
           try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
           disarmWatchdog()
           setIntroDone(true)
+          syncLayers(); layoutZoneChips()
         }, INTRO_MS + 1500)
       }, 400)
 
@@ -398,7 +399,7 @@ export default function MapCanvas({
           try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
           map.jumpTo({ ...NORTH_EGYPT_VIEW })
           setIntroDone(true)
-          syncLayers()
+          syncLayers(); layoutZoneChips()
         }
       }, INTRO_MS + 2600)
     }
@@ -455,7 +456,7 @@ export default function MapCanvas({
         cameraIntentRef.current = { ...intent, applied: true }
         disarmWatchdog()
         setIntroDone(true)
-        syncLayers()
+        syncLayers(); layoutZoneChips()
       }
       return true
     }
@@ -500,7 +501,8 @@ export default function MapCanvas({
 
     zoneMarkers.current.forEach(m => {
       const el = m.getElement()
-      el.style.display = showPins ? 'none' : 'flex'
+      // no chips over the opening flight — they appear once it lands
+      el.style.display = (!introDoneRef.current || showPins) ? 'none' : 'flex'
     })
 
     if (!showPins) {

@@ -56,32 +56,11 @@ const PANEL_OFFSET = [224, 0]
 const DRAWER_W = 560
 
 const ZONES_SRC = 'zones-src'
-const AREA_SRC  = 'area-src'
 
 /* Fit padding — whatever chrome covers the map on this layout. Desktop and
    tablet lose their left edge to the panel; phones lose the bottom to the
    sheet. Values are clamped so a fit can never exceed the viewport. */
 const FIT_PADDING = { left: 460, top: 70, right: 60, bottom: 90 }
-
-function drawSelectedArea(map, geojson) {
-  const data = { type: 'Feature', properties: {}, geometry: geojson }
-  const src = map.getSource(AREA_SRC)
-  if (src) { src.setData(data); return }
-  map.addSource(AREA_SRC, { type: 'geojson', data })
-  // focused area: same outline treatment, a touch stronger
-  map.addLayer({
-    id: 'area-line',
-    type: 'line',
-    source: AREA_SRC,
-    layout: { 'line-join': 'round' },
-    paint: { 'line-color': '#4C64FF', 'line-width': 3, 'line-opacity': 0.95 },
-  })
-}
-
-function clearSelectedArea(map) {
-  if (map.getLayer('area-line')) map.removeLayer('area-line')
-  if (map.getSource(AREA_SRC)) map.removeSource(AREA_SRC)
-}
 
 const shortPrice = (v) =>
   v >= 1_000_000
@@ -161,8 +140,6 @@ export default function MapCanvas({
   zones,
   selectedProject,
   onSelectProject,
-  selectedArea,
-  onSelectArea,
   compareSelection,
   layout = 'desktop',
   children,
@@ -179,8 +156,6 @@ export default function MapCanvas({
   const callbacksRef  = useRef({ onSelectProject })
   const hiddenRef       = useRef(0)
   const orderRef        = useRef([])
-  const boundaryRef     = useRef(null)   // focused area's border geometry
-  const selectedAreaRef = useRef(null)
   const styleReadyRef   = useRef(false)  // set by the style.load event
   const pendingDrawRef  = useRef([])
   const watchdogRef     = useRef(null)
@@ -364,8 +339,7 @@ export default function MapCanvas({
   zonesRef.current     = zones
   selectedRef.current  = selectedProject
   compareRef.current   = compareSelection
-  callbacksRef.current   = { onSelectProject, onSelectArea }
-  selectedAreaRef.current = selectedArea
+  callbacksRef.current   = { onSelectProject }
 
   /* ── init map once ─────────────────────────────────────────────────── */
   useEffect(() => {
@@ -445,9 +419,7 @@ export default function MapCanvas({
     map.on('style.load', () => {
       try { map.setProjection({ type: 'globe' }) } catch { /* raster fallback */ }
       styleReadyRef.current = true
-      drawZoneAreas(map, zonesRef.current.filter(z => z.area !== selectedAreaRef.current))
-      // setStyle() wipes sources — restore the focused area's border
-      if (boundaryRef.current) drawSelectedArea(map, boundaryRef.current)
+      drawZoneAreas(map, zonesRef.current)
       // flush anything that asked to draw before the style was ready
       const pending = pendingDrawRef.current
       pendingDrawRef.current = []
@@ -727,8 +699,7 @@ export default function MapCanvas({
     const map = mapRef.current
     if (!map || !mapReady) return
 
-    // the selected area gets its real border drawn instead of the hull
-    whenStyleReady(() => drawZoneAreas(map, zones.filter(z => z.area !== selectedArea)))
+    whenStyleReady(() => drawZoneAreas(map, zones))
 
     zoneMarkers.current.forEach(m => m.remove())
     zoneMarkers.current = []
@@ -739,58 +710,33 @@ export default function MapCanvas({
       el.type = 'button'
       el.innerHTML = `<strong>${zone.count}</strong><span>${zone.area}</span>`
       el.dataset.count = zone.count
-      el.addEventListener('click', () => callbacksRef.current.onSelectArea(zone.area))
+      // tapping an area frames it — no selection state, just the camera
+      el.addEventListener('click', () => focusArea(zone))
       zoneMarkers.current.push(
         new Marker({ element: el }).setLngLat([zone.lng, zone.lat]).addTo(map)
       )
     }
     syncLayers(); layoutZoneChips(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zones, mapReady, selectedArea])
+  }, [zones, mapReady])
 
-  /* ── selected area: fit to its real governmental border ────────────── */
-  useEffect(() => {
+  /* Frame an area: its real border when OSM has one, otherwise the spread
+     of its projects. Pure camera work — nothing is "selected". */
+  const focusArea = (zone) => {
     const map = mapRef.current
-    if (!map || !mapReady) return
-
-    if (!selectedArea) {
-      boundaryRef.current = null
-      clearSelectedArea(map)
-      return
-    }
-
-    /* This is broker-driven navigation: retire the intro watchdog so it
-       cannot yank the camera back to the country view moments later. */
+    if (!map) return
     disarmWatchdog()
-
-    /* fitBounds uses camera padding, which is only safe on mercator — make
-       sure we are off the globe even if the intro's moveend never fired. */
     try { map.setProjection({ type: 'mercator' }) } catch { /* ignore */ }
 
-    const boundary = getAreaBoundary(selectedArea)   // bundled, synchronous
-    const zone     = zonesRef.current.find(z => z.area === selectedArea)
-
-    if (boundary) {
-      boundaryRef.current = boundary.geometry
-      whenStyleReady(() => {
-        if (boundaryRef.current) drawSelectedArea(map, boundaryRef.current)
-      })
-    } else {
-      // OSM has no official polygon for this area — no invented shape
-      boundaryRef.current = null
-      clearSelectedArea(map)
-    }
-
-    const bounds = boundary?.bounds ?? boundsOfPoints(zone?.points ?? [])
-    if (bounds) {
-      setCamera(map, {
-        kind: 'fit',
-        bounds,
-        opts: { padding: fitPadding(), duration: 1400, maxZoom: 14, essential: true },
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedArea, mapReady])
+    const boundary = getAreaBoundary(zone.area)
+    const bounds = boundary?.bounds ?? boundsOfPoints(zone.points ?? [])
+    if (!bounds) return
+    setCamera(map, {
+      kind: 'fit',
+      bounds,
+      opts: { padding: fitPadding(), duration: 1400, maxZoom: 14, essential: true },
+    })
+  }
 
   /* ── refresh pins when the filtered project set changes ────────────── */
   useEffect(() => {

@@ -65,8 +65,8 @@ export default function ControlsBar({
             <path d="M5 3v10m0 0L2.5 10.5M5 13l2.5-2.5M11 13V3m0 0L8.5 5.5M11 3l2.5 2.5"
               stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          {sort === 'featured' ? 'Sort by' : currentSort.label}
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <span className="controls-btn-label">{sort === 'featured' ? 'Sort by' : currentSort.label}</span>
+          <svg className="controls-btn-caret" width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
@@ -99,7 +99,7 @@ export default function ControlsBar({
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <path d="M2 4h12M4.5 8h7M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
         </svg>
-        Filters
+        <span className="controls-btn-label">Filters</span>
         {activeFilterCount > 0 && <span className="controls-filter-count">{activeFilterCount}</span>}
       </button>
     </div>

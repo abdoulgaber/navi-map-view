@@ -7,6 +7,7 @@ import ProjectDrawer from './ProjectDrawer.jsx'
 import CompareBar from './CompareBar.jsx'
 import CompareDrawer from './CompareDrawer.jsx'
 import MapCanvas from './MapCanvas.jsx'
+import { useBreakpoint } from '../hooks/useBreakpoint.js'
 
 /** Mixed-use projects appear in both categories */
 const CATEGORY_MATCH = {
@@ -48,6 +49,13 @@ export default function MapView({ filters, search, sort }) {
   const [compareMax,  setCompareMax]  = useState(false)
 
   const listRef = useRef(null)
+
+  /* On phones and tablets the list lives in a sheet over the map. It has
+     three heights so a broker can go from "mostly map" to "mostly list"
+     with one drag, the way native map apps behave. */
+  const { isMobile, isCompact } = useBreakpoint()
+  const [sheet, setSheet] = useState('half')   // 'peek' | 'half' | 'full'
+  const dragRef = useRef(null)
 
   /* The map handles 1,400+ projects fine, but rendering that many cards
      would choke the panel — reveal them as the broker scrolls. */
@@ -117,10 +125,11 @@ export default function MapView({ filters, search, sort }) {
     setSelectedProject(project)
     setDrawerProject(project)
     setDrawerClosing(false)
+    if (isCompact) setSheet('peek')   // let the map breathe behind the drawer
     listRef.current
       ?.querySelector(`[data-id="${project.id}"]`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [compareMode, toggleCompareItem])
+  }, [compareMode, toggleCompareItem, isCompact])
 
   /* Let the panel play its 400ms exit before it leaves the tree */
   const DRAWER_ANIM_MS = 400
@@ -141,10 +150,49 @@ export default function MapView({ filters, search, sort }) {
     })
   }, [])
 
+  /* Drag / flick the sheet between its three stops */
+  const onSheetPointerDown = (e) => {
+    dragRef.current = { y: e.clientY, at: Date.now(), from: sheet }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }
+  const onSheetPointerUp = (e) => {
+    const d = dragRef.current
+    dragRef.current = null
+    if (!d) return
+    const dy = e.clientY - d.y
+    const quick = Date.now() - d.at < 300
+    if (Math.abs(dy) < 24 && quick) {           // tap the handle → next stop
+      setSheet(s => (s === 'peek' ? 'half' : s === 'half' ? 'full' : 'peek'))
+      return
+    }
+    const order = ['peek', 'half', 'full']
+    const i = order.indexOf(d.from)
+    if (dy < -40) setSheet(order[Math.min(i + 1, 2)])
+    else if (dy > 40) setSheet(order[Math.max(i - 1, 0)])
+  }
+
+  const sheetClass = isCompact ? ` list-panel--sheet list-panel--${sheet}` : ''
+
   return (
-    <div className="map-view">
+    <div className={`map-view${isCompact ? ' map-view--compact' : ''}`}>
       {/* Left panel */}
-      <aside className="list-panel">
+      <aside className={`list-panel${sheetClass}`}>
+        {isCompact && (
+          <div
+            className="sheet-grip"
+            onPointerDown={onSheetPointerDown}
+            onPointerUp={onSheetPointerUp}
+            role="button"
+            tabIndex={0}
+            aria-label="Resize list"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowUp')   setSheet(s => (s === 'peek' ? 'half' : 'full'))
+              if (e.key === 'ArrowDown') setSheet(s => (s === 'full' ? 'half' : 'peek'))
+            }}
+          >
+            <span />
+          </div>
+        )}
         <div className="list-panel-top">
           <CategoryTabs category={category} onChange={setCategory} counts={counts} />
           {selectedArea ? (
@@ -216,6 +264,7 @@ export default function MapView({ filters, search, sort }) {
         selectedArea={selectedArea}
         onSelectArea={setSelectedArea}
         compareSelection={compareSel}
+        layout={isMobile ? 'mobile' : isCompact ? 'tablet' : 'desktop'}
       >
         {/* Compare — NAVI hand-off button: white when idle, blue with a
             count and a dismiss when the mode is on */}

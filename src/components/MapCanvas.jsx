@@ -58,7 +58,9 @@ const DRAWER_W = 560
 const ZONES_SRC = 'zones-src'
 const AREA_SRC  = 'area-src'
 
-/* Fit padding — the floating list panel covers the left edge */
+/* Fit padding — whatever chrome covers the map on this layout. Desktop and
+   tablet lose their left edge to the panel; phones lose the bottom to the
+   sheet. Values are clamped so a fit can never exceed the viewport. */
 const FIT_PADDING = { left: 460, top: 70, right: 60, bottom: 90 }
 
 function drawSelectedArea(map, geojson) {
@@ -162,6 +164,7 @@ export default function MapCanvas({
   selectedArea,
   onSelectArea,
   compareSelection,
+  layout = 'desktop',
   children,
 }) {
   const containerRef  = useRef(null)
@@ -185,6 +188,8 @@ export default function MapCanvas({
   const cameraIntentRef = useRef(null)   // last camera we asked for
   const hadSizeRef      = useRef(false)
   const movingRef       = useRef(false)   // true between movestart and moveend
+  const layoutRef       = useRef(layout)
+  layoutRef.current     = layout
 
   /* MapLibre silently ignores camera commands while its container has no
      size (hidden tab, collapsed panel, a pane that opens at 0×0). Remember
@@ -294,12 +299,45 @@ export default function MapCanvas({
   const focusOffset = (drawerOpen) => {
     const map = mapRef.current
     if (!map) return [0, 0]
-    const { clientWidth: W } = map.getContainer()
-    const box   = map.getContainer().getBoundingClientRect()
+    const el = map.getContainer()
+    const { clientWidth: W, clientHeight: H } = el
+    const box = el.getBoundingClientRect()
+
+    /* Phones stack their chrome: the sheet/drawer covers the BOTTOM, so the
+       free strip runs vertically. Wider layouts put panel and drawer on the
+       sides, so the free strip runs horizontally. */
+    if (layoutRef.current === 'mobile') {
+      const sheet = document.querySelector('.list-panel, .pdrawer')?.getBoundingClientRect()
+      const bottom = sheet ? Math.max(sheet.top - box.top, H * 0.35) : H
+      return [0, Math.round((bottom / 2) - H / 2)]
+    }
+
     const panel = document.querySelector('.list-panel')?.getBoundingClientRect()
     const left  = panel ? panel.right - box.left + 12 : 12
-    const right = drawerOpen ? W - (DRAWER_W + 16 + 12) : W - 12
+    const right = drawerOpen && layoutRef.current === 'desktop'
+      ? W - (DRAWER_W + 16 + 12)
+      : W - 12
     return [Math.round((left + right) / 2 - W / 2), 0]
+  }
+
+
+  /* Padding for fitBounds: keep the fitted area inside the strip this
+     layout actually leaves visible, and never let it exceed the map. */
+  const fitPadding = () => {
+    const map = mapRef.current
+    if (!map) return { top: 24, right: 24, bottom: 24, left: 24 }
+    const { clientWidth: W, clientHeight: H } = map.getContainer()
+    const raw = layoutRef.current === 'mobile'
+      ? { top: 40, right: 24, bottom: Math.round(H * 0.42), left: 24 }
+      : layoutRef.current === 'tablet'
+        ? { top: 60, right: 40, bottom: 70, left: 360 }
+        : FIT_PADDING
+    return {
+      top:    Math.min(raw.top,    Math.max(0, H / 2 - 40)),
+      bottom: Math.min(raw.bottom, Math.max(0, H / 2 - 40)),
+      left:   Math.min(raw.left,   Math.max(0, W / 2 - 40)),
+      right:  Math.min(raw.right,  Math.max(0, W / 2 - 40)),
+    }
   }
 
   /* The intro watchdog rescues a stalled globe, but it must never fight the
@@ -362,7 +400,7 @@ export default function MapCanvas({
            transform, so we resolve the padded framing up front instead. */
         let target = NORTH_EGYPT_VIEW
         try {
-          const cam = map.cameraForBounds(NORTH_EGYPT_BOUNDS, { padding: FIT_PADDING })
+          const cam = map.cameraForBounds(NORTH_EGYPT_BOUNDS, { padding: fitPadding() })
           if (cam) target = { center: cam.center, zoom: Math.min(cam.zoom, 8) }
         } catch { /* keep the fallback framing */ }
         setCamera(map, {
@@ -748,7 +786,7 @@ export default function MapCanvas({
       setCamera(map, {
         kind: 'fit',
         bounds,
-        opts: { padding: FIT_PADDING, duration: 1400, maxZoom: 14, essential: true },
+        opts: { padding: fitPadding(), duration: 1400, maxZoom: 14, essential: true },
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,5 +1,5 @@
 import {
-  computePlacements, repairOverlaps, estimatePillW,
+  computePlacements, repairOverlaps, chooseChips, estimatePillW,
   PILL_H, DOT_SIZE,
 } from './placement.js'
 
@@ -123,6 +123,45 @@ for (const { name, entries } of scenarios) {
     `      overlapsBefore=${before} overlapsAfter=${after} ` +
     `shown=${shown.length}/${sim.length}`
   )
+}
+
+
+/* ── area chip selection ──────────────────────────────────────────────── */
+{
+  const assert = (ok, msg) => { if (!ok) { failures++; console.log('FAIL  ' + msg) } }
+  const view = { left: 0, top: 0, right: 1440, bottom: 900 }
+  const chip = (id, count, x, y) => ({ id, count, rect: { left: x, top: y, right: x + 120, bottom: y + 38 } })
+  const overlaps = (a, b) =>
+    a.rect.left < b.rect.right && a.rect.right > b.rect.left &&
+    a.rect.top < b.rect.bottom && a.rect.bottom > b.rect.top
+
+  // 1. spread out: capped at `max`, never overlapping
+  const spread = Array.from({ length: 20 }, (_, i) =>
+    chip(i, 100 - i, 40 + (i % 5) * 260, 40 + Math.floor(i / 5) * 200))
+  const shownSpread = chooseChips(spread, view, { max: 7 })
+  const picked = spread.filter(c => shownSpread.has(c.id))
+  let pairs = 0
+  for (let i = 0; i < picked.length; i++)
+    for (let j = i + 1; j < picked.length; j++)
+      if (overlaps(picked[i], picked[j])) pairs++
+  assert(picked.length === 7, `spread: expected 7 chips, got ${picked.length}`)
+  assert(pairs === 0, `spread: ${pairs} overlapping chips`)
+  // busiest win
+  assert(picked.every(c => c.count >= 94), 'spread: busiest areas were not preferred')
+  console.log(`PASS  chips spread out → ${picked.length}/20 shown, ${pairs} overlaps, busiest kept`)
+
+  // 2. dense pile (globe zoom): everything on the same spot → exactly one
+  const pile = Array.from({ length: 25 }, (_, i) => chip(i, 50 + i, 700 + i % 3, 440))
+  const shownPile = chooseChips(pile, view, { max: 7 })
+  assert(shownPile.size === 1, `pile: expected 1 chip, got ${shownPile.size}`)
+  console.log(`PASS  chips piled at one point → ${shownPile.size} shown (no stacking)`)
+
+  // 3. off-screen chips are never labelled
+  const off = [chip(0, 999, -400, 440), chip(1, 998, 2000, 440), chip(2, 5, 600, 400)]
+  const shownOff = chooseChips(off, view, { max: 7 })
+  assert(!shownOff.has(0) && !shownOff.has(1) && shownOff.has(2),
+    'off-screen chips were not skipped')
+  console.log('PASS  off-screen chips skipped, on-screen one kept')
 }
 
 console.log(failures === 0 ? '\nALL SCENARIOS PASS — zero overlaps at every density' : `\n${failures} SCENARIO(S) FAILED`)

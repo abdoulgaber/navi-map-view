@@ -6,7 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // so the worker is never emitted and 404s in production, leaving a blank
 // map (no vector tiles, no GeoJSON). Hand it the URL Vite actually built.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { computePlacements, repairOverlaps } from '../utils/placement.js'
+import { computePlacements, repairOverlaps, chooseChips } from '../utils/placement.js'
 import { getAreaBoundary, boundsOfPoints, boundaryFeatures } from '../utils/boundaries.js'
 
 /**
@@ -277,29 +277,16 @@ export default function MapCanvas({
     if (!view.width || !view.height) return
 
     chips.forEach(el => { el.style.visibility = '' })
-    chips.sort((a, b) => Number(b.dataset.count || 0) - Number(a.dataset.count || 0))
-
-    const taken = []
-    let shown = 0
-    for (const el of chips) {
-      // both rects are viewport-relative — compare like with like
-      const r = el.getBoundingClientRect()
-      const offScreen =
-        r.right < view.left || r.left > view.right ||
-        r.bottom < view.top || r.top > view.bottom
-      const box = { x1: r.left - 6, y1: r.top - 6, x2: r.right + 6, y2: r.bottom + 6 }
-      const collides = taken.some(t =>
-        box.x1 < t.x2 && box.x2 > t.x1 && box.y1 < t.y2 && box.y2 > t.y1)
-
-      if (offScreen || collides || shown >= MAX_CHIPS) {
-        el.style.visibility = 'hidden'
-      } else {
-        taken.push(box)
-        shown++
-      }
-    }
+    const items = chips.map((el, i) => ({
+      id: i,
+      count: Number(el.dataset.count || 0),
+      rect: el.getBoundingClientRect(),
+    }))
+    const shown = chooseChips(items, view, { max: MAX_CHIPS })
+    chips.forEach((el, i) => {
+      el.style.visibility = shown.has(i) ? '' : 'hidden'
+    })
   }
-
 
   /* Where a selected project should sit: dead centre of the strip the
      broker can actually see — between the list panel and the detail

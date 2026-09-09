@@ -115,3 +115,34 @@ export function repairOverlaps(order, get, gap = 6, fixedRects = []) {
   }
   return hidden
 }
+
+/**
+ * Which area chips to label on the map.
+ *
+ * Busiest areas win, off-screen ones are skipped, anything that would
+ * touch an already placed chip is dropped, and the total is capped so a
+ * country view shows a handful of landmarks instead of a wall of labels.
+ *
+ * @param items [{ id, count, rect }] — rect is viewport-relative
+ * @param view  the map container's rect, in the same coordinate space
+ * @returns Set of ids to show
+ */
+export function chooseChips(items, view, { max = 7, gap = 6 } = {}) {
+  const sorted = [...items].sort((a, b) => b.count - a.count)
+  const taken = []
+  const shown = new Set()
+
+  for (const item of sorted) {
+    if (shown.size >= max) break
+    const r = item.rect
+    if (r.right < view.left || r.left > view.right ||
+        r.bottom < view.top || r.top > view.bottom) continue
+
+    const box = { x1: r.left - gap, y1: r.top - gap, x2: r.right + gap, y2: r.bottom + gap }
+    if (taken.some(t => intersects(box, t))) continue
+
+    taken.push(box)
+    shown.add(item.id)
+  }
+  return shown
+}

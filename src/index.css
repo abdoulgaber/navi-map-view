@@ -1444,13 +1444,23 @@ input  { font-family: var(--font); border: none; outline: none; background: none
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--gray-300) transparent;
-  animation: pdrawerIn 0.24s ease-out;
+  animation: pdrawerIn 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+/* exit: the panel slides back out before it leaves the tree */
+.pdrawer--closing {
+  animation: pdrawerOut 400ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
 }
 .pdrawer::-webkit-scrollbar { width: 6px; }
 .pdrawer::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
 @keyframes pdrawerIn {
-  from { opacity: 0; transform: translateX(16px); }
+  from { opacity: 0; transform: translateX(calc(100% + 16px)); }
   to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pdrawerOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(calc(100% + 16px)); }
 }
 
 .pdrawer-close {

@@ -108,7 +108,7 @@ const IconPinSmall = () => (
   </svg>
 )
 
-export default function ProjectDrawer({ project, onClose }) {
+export default function ProjectDrawer({ project, onClose, closing = false }) {
   const units = useMemo(() => buildUnits(project), [project])
 
   useEffect(() => {
@@ -120,7 +120,7 @@ export default function ProjectDrawer({ project, onClose }) {
   const photo = (i) => PHOTOS[(project.id + i) % PHOTOS.length]
 
   return (
-    <aside className="pdrawer">
+    <aside className={`pdrawer${closing ? ' pdrawer--closing' : ''}`}>
       <button className="pdrawer-close" onClick={onClose} aria-label="Close">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M13.5 4.5l-9 9M4.5 4.5l9 9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>

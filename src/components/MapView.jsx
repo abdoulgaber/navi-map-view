@@ -38,6 +38,7 @@ export default function MapView({ filters, search, sort }) {
   const [category,        setCategory]        = useState('Residential')
   const [selectedProject, setSelectedProject] = useState(null)
   const [drawerProject,   setDrawerProject]   = useState(null)
+  const [drawerClosing,   setDrawerClosing]   = useState(false)
   const [selectedArea,    setSelectedArea]    = useState(null)
 
   /* Compare mode */
@@ -115,14 +116,21 @@ export default function MapView({ filters, search, sort }) {
     if (compareMode) { toggleCompareItem(project.id); return }
     setSelectedProject(project)
     setDrawerProject(project)
+    setDrawerClosing(false)
     listRef.current
       ?.querySelector(`[data-id="${project.id}"]`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [compareMode, toggleCompareItem])
 
+  /* Let the panel play its 400ms exit before it leaves the tree */
+  const DRAWER_ANIM_MS = 400
   const handleCloseDrawer = useCallback(() => {
-    setDrawerProject(null)
+    setDrawerClosing(true)
     setSelectedProject(null)
+    setTimeout(() => {
+      setDrawerProject(null)
+      setDrawerClosing(false)
+    }, DRAWER_ANIM_MS)
   }, [])
 
   const toggleCompareMode = useCallback(() => {
@@ -238,7 +246,7 @@ export default function MapView({ filters, search, sort }) {
 
       {/* Drawers */}
       {drawerProject && (
-        <ProjectDrawer project={drawerProject} onClose={handleCloseDrawer} />
+        <ProjectDrawer project={drawerProject} onClose={handleCloseDrawer} closing={drawerClosing} />
       )}
       {compareOpen && (
         <CompareDrawer items={compareItems} onClose={() => setCompareOpen(false)} />

@@ -51,6 +51,10 @@ const INTRO_MS    = 3200
    transform, which freezes the camera and leaves the map unpainted. */
 const PANEL_OFFSET = [224, 0]
 
+/* width of the project drawer (see .pdrawer) — used to centre a selected
+   project in the gap that is left between the panel and the drawer */
+const DRAWER_W = 560
+
 const ZONES_SRC = 'zones-src'
 const AREA_SRC  = 'area-src'
 
@@ -180,6 +184,7 @@ export default function MapCanvas({
   const introDoneRef    = useRef(false)
   const cameraIntentRef = useRef(null)   // last camera we asked for
   const hadSizeRef      = useRef(false)
+  const movingRef       = useRef(false)   // true between movestart and moveend
 
   /* MapLibre silently ignores camera commands while its container has no
      size (hidden tab, collapsed panel, a pane that opens at 0×0). Remember
@@ -248,6 +253,59 @@ export default function MapCanvas({
   const hideHoverCard = () => {
     const card = hoverCardRef.current
     if (card) card.style.display = 'none'
+  }
+
+
+  /* ── Area chips: few, stable, never stacked ───────────────────────────
+     Like Nawy's map, only the areas that matter are labelled: the busiest
+     ones that fit, capped so a country view never turns into a wall of
+     labels. Crucially this runs ONLY when the camera has settled — running
+     it mid-gesture is what made chips flicker while zooming. */
+  const MAX_CHIPS = 7
+
+  const layoutZoneChips = () => {
+    const map = mapRef.current
+    if (!map) return
+    const chips = zoneMarkers.current
+      .map(m => m.getElement())
+      .filter(el => el.style.display !== 'none')
+    if (!chips.length) return
+
+    chips.forEach(el => { el.style.visibility = '' })
+    chips.sort((a, b) => Number(b.dataset.count || 0) - Number(a.dataset.count || 0))
+
+    const { clientWidth: W, clientHeight: H } = map.getContainer()
+    const taken = []
+    let shown = 0
+    for (const el of chips) {
+      const r = el.getBoundingClientRect()
+      const offScreen = r.right < 0 || r.left > W || r.bottom < 0 || r.top > H
+      const box = { x1: r.left - 6, y1: r.top - 6, x2: r.right + 6, y2: r.bottom + 6 }
+      const collides = taken.some(t =>
+        box.x1 < t.x2 && box.x2 > t.x1 && box.y1 < t.y2 && box.y2 > t.y1)
+
+      if (offScreen || collides || shown >= MAX_CHIPS) {
+        el.style.visibility = 'hidden'
+      } else {
+        taken.push(box)
+        shown++
+      }
+    }
+  }
+
+
+  /* Where a selected project should sit: dead centre of the strip the
+     broker can actually see — between the list panel and the detail
+     drawer — never tucked behind either of them. */
+  const focusOffset = (drawerOpen) => {
+    const map = mapRef.current
+    if (!map) return [0, 0]
+    const { clientWidth: W } = map.getContainer()
+    const box   = map.getContainer().getBoundingClientRect()
+    const panel = document.querySelector('.list-panel')?.getBoundingClientRect()
+    const left  = panel ? panel.right - box.left + 12 : 12
+    const right = drawerOpen ? W - (DRAWER_W + 16 + 12) : W - 12
+    return [Math.round((left + right) / 2 - W / 2), 0]
   }
 
   /* The intro watchdog rescues a stalled globe, but it must never fight the
@@ -373,12 +431,12 @@ export default function MapCanvas({
       if (raf) return
       raf = requestAnimationFrame(() => { raf = null; syncLayers() })
     })
-    map.on('movestart', hideHoverCard)
-    map.on('moveend', () => { syncLayers(); repairPass() })
+    map.on('movestart', () => { movingRef.current = true; hideHoverCard() })
+    map.on('moveend', () => { movingRef.current = false; syncLayers(); repairPass(); layoutZoneChips() })
     /* 'idle' is the only signal that the camera has settled AND every
        marker has been positioned — decluttering before that measures
        stale positions and can hide labels that do not actually collide. */
-    map.on('idle', () => { syncLayers(); repairPass() })
+    map.on('idle', () => { syncLayers(); repairPass(); layoutZoneChips() })
 
     /* Recover from a zero-sized container. MapLibre drops camera commands
        while it has no box, so the intro (or an area fit) can be lost; when
@@ -449,7 +507,6 @@ export default function MapCanvas({
     zoneMarkers.current.forEach(m => {
       const el = m.getElement()
       el.style.display = showPins ? 'none' : 'flex'
-      if (!showPins) el.style.visibility = ''   // re-measured by the repair pass
     })
 
     if (!showPins) {
@@ -478,6 +535,26 @@ export default function MapCanvas({
       byId.set(p.id, { p, label })
     }
 
+    const visible = new Set(byId.keys())
+
+    /* Re-deciding which chips are labels vs dots on every frame of a pinch
+       or pan is what makes the map flicker. Markers already move with the
+       camera on their own, so mid-gesture we only add/remove what enters or
+       leaves the viewport and leave every existing decision alone; the full
+       placement runs once the camera settles. */
+    if (movingRef.current) {
+      for (const [id, { p, label }] of byId) {
+        if (!pinMarkers.current.has(id)) ensurePin(p, map, 'hidden', label)
+      }
+      pinMarkers.current.forEach((entry, id) => {
+        if (!visible.has(id)) {
+          entry.marker.remove()
+          pinMarkers.current.delete(id)
+        }
+      })
+      return
+    }
+
     /* Name chips → dots → hidden, never stacked. Priority: selected
        project, then busiest areas (density = broker demand), then the
        list's current sort order. */
@@ -485,7 +562,6 @@ export default function MapCanvas({
     const { modes, order, hidden } = computePlacements(entries, popularity, selectedRef.current?.id)
     orderRef.current = order
 
-    const visible = new Set(byId.keys())
     const rank = new Map(order.map((id, i) => [id, i]))
     for (const [id, mode] of modes) {
       const { p, label } = byId.get(id)
@@ -533,26 +609,6 @@ export default function MapCanvas({
     const runRepair = () => {
       if (ran) return
       ran = true
-      /* Area badges: busiest areas win, any badge that would collide with
-         one already placed is hidden — the same breathing rule the project
-         chips follow, so the country view never stacks labels. */
-      const badges = zoneMarkers.current
-        .map(m => m.getElement())
-        .filter(el => el.style.display !== 'none')
-      if (badges.length) {
-        badges.forEach(el => { el.style.visibility = '' })
-        badges.sort((a, b) => Number(b.dataset.count || 0) - Number(a.dataset.count || 0))
-        const taken = []
-        for (const el of badges) {
-          const r = el.getBoundingClientRect()
-          const box = { x1: r.left - 4, y1: r.top - 4, x2: r.right + 4, y2: r.bottom + 4 }
-          const hits = taken.some(t =>
-            box.x1 < t.x2 && box.x2 > t.x1 && box.y1 < t.y2 && box.y2 > t.y1)
-          if (hits) el.style.visibility = 'hidden'
-          else taken.push(box)
-        }
-      }
-
       if (!pinsShown) return   // badges handled above; no chips at this zoom
 
       /* Source markers from the LIVE DOM (not a cached order array, which
@@ -651,7 +707,7 @@ export default function MapCanvas({
         new Marker({ element: el }).setLngLat([zone.lng, zone.lat]).addTo(map)
       )
     }
-    syncLayers(); repairPass()
+    syncLayers(); layoutZoneChips(); repairPass()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zones, mapReady, selectedArea])
 
@@ -717,7 +773,7 @@ export default function MapCanvas({
     map.flyTo({
       center: [selectedProject.lng, selectedProject.lat],
       zoom: Math.max(map.getZoom(), 13.5),
-      offset: PANEL_OFFSET,
+      offset: focusOffset(true),   // the drawer opens with this selection
       duration: 1400,
       essential: true,
     })

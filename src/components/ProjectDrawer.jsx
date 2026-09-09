@@ -1,192 +1,239 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 
-const BADGE_CONFIG = {
-  Trendy:    { icon: '🔥', color: '#FFFFFF', bg: '#EF476F' },
-  Incentive: { icon: '💰', color: '#FFFFFF', bg: '#FF6006' },
-}
+/**
+ * ProjectDrawer — NAVI hand-off design (node 20959:151193).
+ * A floating panel over the right of the map: photo mosaic, project
+ * header, the six headline figures, the explore tiles, and the unit
+ * price list.
+ */
 
-const UNIT_ICONS = {
-  Studio:     '🏠',
-  Apartment:  '🏢',
-  Duplex:     '🏘',
-  Penthouse:  '🌆',
-  Villa:      '🏡',
-  'Twin House': '🏗',
-  'Town House': '🏙',
-}
-
-const DUMMY_PRICE_ROWS = [
-  { type: 'Studio',    area: '55',  floor: '2',  price: '2,100,000',  downPayment: '10%', years: '6',  monthly: '26,250',  total: '2,450,000' },
-  { type: 'Apartment', area: '90',  floor: '3',  price: '3,850,000',  downPayment: '15%', years: '7',  monthly: '38,512',  total: '4,434,000' },
-  { type: 'Apartment', area: '110', floor: '5',  price: '4,950,000',  downPayment: '15%', years: '7',  monthly: '49,500',  total: '5,693,000' },
-  { type: 'Duplex',    area: '160', floor: '8',  price: '7,200,000',  downPayment: '20%', years: '8',  monthly: '60,000',  total: '8,064,000' },
-  { type: 'Penthouse', area: '220', floor: '10', price: '12,500,000', downPayment: '25%', years: '10', monthly: '78,125',  total: '14,025,000' },
-  { type: 'Villa',     area: '350', floor: 'G',  price: '18,000,000', downPayment: '30%', years: '7',  monthly: '150,000', total: '19,800,000' },
-  { type: 'Twin House',area: '280', floor: 'G',  price: '14,500,000', downPayment: '25%', years: '8',  monthly: '113,281', total: '16,166,000' },
-  { type: 'Town House',area: '210', floor: 'G',  price: '10,800,000', downPayment: '20%', years: '7',  monthly: '90,000',  total: '11,880,000' },
+const PHOTOS = [
+  'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=900&q=70',
+  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=70',
+  'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=600&q=70',
+  'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=70',
+  'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=600&q=70',
 ]
 
+const BADGE_STYLE = {
+  Trendy:    { bg: '#EF476F', shadow: '0 4px 12px rgba(239,71,111,0.15)' },
+  Incentive: { bg: '#FF6006', shadow: '0 4px 12px rgba(255,96,6,0.1)' },
+}
+
+const FINISHING = ['Not Finished', 'Semi Finished', 'Finished', 'Furnished', 'Flexi Finished']
+
+/** Deterministic unit rows per project — the columns of the hand-off table */
+function buildUnits(project) {
+  const rows = []
+  let seed = project.id * 7919
+  const rand = (n) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed % n
+  }
+  for (let i = 0; i < 8; i++) {
+    const bua  = project.buaValue + rand(90)
+    const cash = project.priceValue + rand(40) * 100_000
+    rows.push({
+      code: `#${12340 + project.id % 900 + i}`,
+      building: 12 + i,
+      finishing: FINISHING[rand(FINISHING.length)],
+      bua: `${bua} M²`,
+      floor: rand(12) + 1,
+      beds: 1 + rand(4),
+      baths: 1 + rand(3),
+      outdoor: rand(4) ? `${5 + rand(30)} M²` : '-',
+      garden:  rand(4) ? `${5 + rand(30)} M²` : '-',
+      roof:    rand(4) ? `${5 + rand(30)} M²` : '-',
+      terrace: rand(4) ? `${5 + rand(30)} M²` : '-',
+      cash: `${cash.toLocaleString()} EGP`,
+      highest: `${Math.round(cash * 1.18).toLocaleString()} EGP`,
+    })
+  }
+  return rows
+}
+
+/* ── icons (24px, Untitled-UI stroke style) ─────────────────────────────── */
+const IconPin = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="1.6"/>
+    <path d="M12 22s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+  </svg>
+)
+const IconImage = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="4.5" width="18" height="15" rx="2.5" stroke="currentColor" strokeWidth="1.6"/>
+    <circle cx="8.5" cy="10" r="1.6" stroke="currentColor" strokeWidth="1.6"/>
+    <path d="m4 17 4.6-4.3a2 2 0 0 1 2.7 0L20 19.5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+  </svg>
+)
+const IconVideo = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <rect x="2.5" y="6" width="13" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.6"/>
+    <path d="m15.5 12.8 4.3 2.9a.8.8 0 0 0 1.2-.7V9a.8.8 0 0 0-1.2-.7l-4.3 2.9v1.6Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+  </svg>
+)
+const IconLayers = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="m12 3 9 4.5-9 4.5-9-4.5L12 3Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+    <path d="m3 16.5 9 4.5 9-4.5M3 12l9 4.5L21 12" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+  </svg>
+)
+const IconDownload = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+    <path d="M5.5 12.5a3.5 3.5 0 0 1 .6-6.95 4.5 4.5 0 0 1 8.5 1.2 3.2 3.2 0 0 1-.6 6.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M10 9v8m0 0 2.5-2.5M10 17l-2.5-2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+const IconMaximize = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <path d="M12 3h5v5M8 17H3v-5M17 3l-6.5 6.5M3 17l6.5-6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+const IconExternal = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <path d="M12 3h5v5M17 3l-7.5 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M15.5 12v3.5A1.5 1.5 0 0 1 14 17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+)
+const IconMoney = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <rect x="1.5" y="3.8" width="13" height="8.4" rx="1.6" stroke="currentColor" strokeWidth="1.3"/>
+    <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/>
+  </svg>
+)
+const IconPinSmall = () => (
+  <svg width="12" height="14" viewBox="0 0 12 14" fill="none">
+    <path d="M6 .8C3.4.8 1.3 2.9 1.3 5.5 1.3 9 6 13.2 6 13.2S10.7 9 10.7 5.5C10.7 2.9 8.6.8 6 .8Z" fill="#4C64FF"/>
+    <circle cx="6" cy="5.4" r="1.7" fill="#fff"/>
+  </svg>
+)
+
 export default function ProjectDrawer({ project, onClose }) {
+  const units = useMemo(() => buildUnits(project), [project])
+
   useEffect(() => {
     const handleKey = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [onClose])
 
-  if (!project) return null
+  const photo = (i) => PHOTOS[(project.id + i) % PHOTOS.length]
 
   return (
-    <>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer">
-        {/* Header */}
-        <div className="drawer-header">
-          <div className="drawer-header-meta">
-            <span className="drawer-developer">{project.developer}</span>
-            <span className="drawer-location">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M6 1C4.07 1 2.5 2.57 2.5 4.5C2.5 7 6 11 6 11C6 11 9.5 7 9.5 4.5C9.5 2.57 7.93 1 6 1ZM6 5.75C5.31 5.75 4.75 5.19 4.75 4.5C4.75 3.81 5.31 3.25 6 3.25C6.69 3.25 7.25 3.81 7.25 4.5C7.25 5.19 6.69 5.75 6 5.75Z" fill="#475467"/>
-              </svg>
-              {project.location}
-            </span>
-          </div>
-          <button className="drawer-close" onClick={onClose} aria-label="Close">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M15 5L5 15M5 5L15 15" stroke="#475467" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
+    <aside className="pdrawer">
+      <button className="pdrawer-close" onClick={onClose} aria-label="Close">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M13.5 4.5l-9 9M4.5 4.5l9 9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+        </svg>
+      </button>
+
+      {/* Photo mosaic */}
+      <div className="pdrawer-photos">
+        <div className="pdrawer-photo pdrawer-photo--main" style={{ backgroundImage: `url('${photo(0)}')` }} />
+        <div className="pdrawer-photo-col">
+          <div className="pdrawer-photo" style={{ backgroundImage: `url('${photo(1)}')` }} />
+          <div className="pdrawer-photo" style={{ backgroundImage: `url('${photo(2)}')` }} />
         </div>
+        <div className="pdrawer-photo-col">
+          <div className="pdrawer-photo" style={{ backgroundImage: `url('${photo(3)}')` }} />
+          <div className="pdrawer-photo" style={{ backgroundImage: `url('${photo(4)}')` }} />
+        </div>
+      </div>
 
-        <div className="drawer-body">
-          {/* Gallery */}
-          <div className="drawer-gallery">
-            <div className="drawer-gallery-main" style={{ background: 'linear-gradient(135deg, #e8edff 0%, #c7d2fe 100%)' }}>
-              <span className="drawer-gallery-placeholder">📸</span>
-            </div>
-            <div className="drawer-gallery-side">
-              <div className="drawer-gallery-thumb" style={{ background: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)' }}>
-                <span className="drawer-gallery-placeholder" style={{ fontSize: 20 }}>🌿</span>
-              </div>
-              <div className="drawer-gallery-thumb" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)' }}>
-                <span className="drawer-gallery-placeholder" style={{ fontSize: 20 }}>🏊</span>
-              </div>
-              <div className="drawer-gallery-thumb drawer-gallery-thumb--more" style={{ background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)' }}>
-                <span>+12 Photos</span>
-              </div>
-            </div>
-          </div>
+      <div className="pdrawer-info">
+        {/* Header */}
+        <div className="pdrawer-head">
+          <div className="pdrawer-logo">{project.developer.slice(0, 2).toUpperCase()}</div>
 
-          {/* Project title + badges */}
-          <div className="drawer-title-row">
-            <h2 className="drawer-title">{project.name}</h2>
-            <div className="drawer-badges">
-              {project.badges.map(b => {
-                const cfg = BADGE_CONFIG[b] || {}
-                return (
-                  <span key={b} className="project-badge" style={{ color: cfg.color, background: cfg.bg }}>
-                    {cfg.icon} {b}
-                  </span>
-                )
-              })}
+          <div className="pdrawer-titles">
+            <div className="pdrawer-meta">
+              <span>{project.developer}</span>
+              <span className="pdrawer-sep">|</span>
+              <span className="pdrawer-loc"><IconPinSmall /> {project.location}</span>
             </div>
-          </div>
-
-          <p className="drawer-description">{project.description}</p>
-
-          {/* Stats grid */}
-          <div className="drawer-stats">
-            <div className="drawer-stat">
-              <span className="drawer-stat-label">Start Price</span>
-              <span className="drawer-stat-value">{project.price}</span>
-            </div>
-            <div className="drawer-stat">
-              <span className="drawer-stat-label">Start BUA</span>
-              <span className="drawer-stat-value">{project.bua}</span>
-            </div>
-            <div className="drawer-stat">
-              <span className="drawer-stat-label">Delivery</span>
-              <span className="drawer-stat-value">{project.delivery}</span>
-            </div>
-            <div className="drawer-stat">
-              <span className="drawer-stat-label">Cash Discount</span>
-              <span className="drawer-stat-value">{project.cashDiscount}</span>
-            </div>
-            <div className="drawer-stat">
-              <span className="drawer-stat-label">Maintenance</span>
-              <span className="drawer-stat-value">{project.maintenance}</span>
-            </div>
-            <div className="drawer-stat">
-              <span className="drawer-stat-label">Parking</span>
-              <span className="drawer-stat-value">{project.parking}</span>
-            </div>
-          </div>
-
-          {/* Unit types */}
-          <div className="drawer-units-section">
-            <h3 className="drawer-section-title">Available Unit Types</h3>
-            <div className="drawer-units">
-              {project.units.map(u => (
-                <div key={u} className="drawer-unit-chip">
-                  <span>{UNIT_ICONS[u] || '🏠'}</span>
-                  <span>{u}</span>
-                </div>
+            <div className="pdrawer-namerow">
+              <h2 className="pdrawer-name">{project.name}</h2>
+              {project.badges.map(b => (
+                <span key={b} className="pdrawer-badge" style={{ background: BADGE_STYLE[b].bg, boxShadow: BADGE_STYLE[b].shadow }}>
+                  {b === 'Incentive' ? <IconMoney /> : '🔥'} {b}
+                </span>
               ))}
             </div>
           </div>
 
-          {/* Price list table */}
-          <div className="drawer-pricelist-section">
-            <div className="drawer-pricelist-header">
-              <h3 className="drawer-section-title">Price List</h3>
-              <span className="drawer-last-update">Last Update: {project.lastUpdate}</span>
-            </div>
-            <div className="drawer-table-wrapper">
-              <table className="drawer-table">
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Area M²</th>
-                    <th>Floor</th>
-                    <th>Price EGP</th>
-                    <th>Down %</th>
-                    <th>Years</th>
-                    <th>Monthly EGP</th>
-                    <th>Total EGP</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DUMMY_PRICE_ROWS.map((row, i) => (
-                    <tr key={i}>
-                      <td>{row.type}</td>
-                      <td>{row.area}</td>
-                      <td>{row.floor}</td>
-                      <td>{row.price}</td>
-                      <td>{row.downPayment}</td>
-                      <td>{row.years}</td>
-                      <td>{row.monthly}</td>
-                      <td>{row.total}</td>
-                      <td>
-                        <button className="table-action-btn" title="View details">
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                            <path d="M6 3L11 8L6 13" stroke="#475467" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="pdrawer-actions">
+            <button type="button" className="pdrawer-pdf">Download PDF</button>
+            <span className="pdrawer-updated">Last Update: {project.lastUpdate}</span>
           </div>
         </div>
 
-        {/* Footer CTA */}
-        <div className="drawer-footer">
-          <button className="btn-primary" style={{ flex: 1 }}>View Full Price List</button>
-          <button className="btn-outline">Share</button>
+        {/* Headline figures */}
+        <div className="pdrawer-stats">
+          {[
+            ['Start Price',   project.price],
+            ['Start BUA',     project.bua],
+            ['Delivery',      project.delivery],
+            ['Cash Discount', project.cashDiscount],
+            ['Maintance',     project.maintenance],
+            ['Parking Fees',  project.parking],
+          ].map(([label, value]) => (
+            <div key={label} className="pdrawer-stat">
+              <span className="pdrawer-stat-label">{label}</span>
+              <span className="pdrawer-stat-value">{value}</span>
+            </div>
+          ))}
         </div>
-      </aside>
-    </>
+
+        {/* Explore tiles */}
+        <div className="pdrawer-explore">
+          <button type="button" className="pdrawer-tile"><IconPin /><span>Location</span></button>
+          <button type="button" className="pdrawer-tile"><IconImage /><span>Gallery</span></button>
+          <button type="button" className="pdrawer-tile"><IconVideo /><span>Video</span></button>
+          <button type="button" className="pdrawer-tile pdrawer-tile--off" disabled><IconLayers /><span>Layouts</span></button>
+        </div>
+      </div>
+
+      {/* Price list */}
+      <section className="pdrawer-pricelist">
+        <div className="pdrawer-pl-bar">
+          <span className="pdrawer-pl-tab">Price List</span>
+          <button type="button" className="pdrawer-pl-export">Export <IconDownload /></button>
+          <button type="button" className="pdrawer-pl-expand" aria-label="Expand"><IconMaximize /></button>
+        </div>
+
+        <div className="pdrawer-table-wrap">
+          <table className="pdrawer-table">
+            <thead>
+              <tr>
+                {['Unit Code','Building No','Finishing','BUA','Floor','Bedrooms','Bathrooms',
+                  'Outdoor','Garden','Roof','Terrace','Cash price','Highest Plan Price','PDF','Payment Plan']
+                  .map(h => <th key={h}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {units.map((u, i) => (
+                <tr key={u.code + i}>
+                  <td>{u.code}</td>
+                  <td>{u.building}</td>
+                  <td>{u.finishing}</td>
+                  <td>{u.bua}</td>
+                  <td>{u.floor}</td>
+                  <td>{u.beds}</td>
+                  <td>{u.baths}</td>
+                  <td>{u.outdoor}</td>
+                  <td>{u.garden}</td>
+                  <td>{u.roof}</td>
+                  <td>{u.terrace}</td>
+                  <td>{u.cash}</td>
+                  <td>{u.highest}</td>
+                  <td><button type="button" className="pdrawer-cell-btn" aria-label="Download unit PDF"><IconDownload /></button></td>
+                  <td><button type="button" className="pdrawer-cell-btn" aria-label="Open payment plan"><IconExternal /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </aside>
   )
 }

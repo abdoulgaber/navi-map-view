@@ -12,13 +12,34 @@ import BOUNDARIES from '../data/areaBoundaries.json'
  * approximation — the badge and the project pins define the area instead.
  */
 
-/** @returns {{name, kind, bounds, geometry}|null} */
+/**
+ * Some OSM matches are governorate-scale (Assiut 255km, Beni Suef 247km,
+ * Suez 170km, Alexandria 149km …) — mostly empty desert, and wildly out
+ * of scale next to a 12km district like Madinaty. Drawing both together
+ * reads as noise, so only city/district-scale borders are highlighted;
+ * the rest are represented by their badge and pins alone.
+ */
+const MAX_BOUNDARY_KM = 60
+
+const boundarySpanKm = (b) => {
+  const [[w, s], [e, n]] = b.bounds
+  const dx = (e - w) * 111 * Math.cos((((n + s) / 2) * Math.PI) / 180)
+  const dy = (n - s) * 111
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+const DRAWABLE = Object.fromEntries(
+  Object.entries(BOUNDARIES).filter(([, b]) => boundarySpanKm(b) <= MAX_BOUNDARY_KM),
+)
+
+/** Full record (used for fitting the camera) — every area we resolved */
 export function getAreaBoundary(area) {
   return BOUNDARIES[area] ?? null
 }
 
-export function hasAreaBoundary(area) {
-  return Boolean(BOUNDARIES[area])
+/** Only the borders we are willing to draw */
+export function hasDrawableBoundary(area) {
+  return Boolean(DRAWABLE[area])
 }
 
 /** GeoJSON FeatureCollection of every area we can draw for real */
@@ -26,11 +47,11 @@ export function boundaryFeatures(areas) {
   return {
     type: 'FeatureCollection',
     features: areas
-      .filter(a => BOUNDARIES[a])
+      .filter(a => DRAWABLE[a])
       .map(a => ({
         type: 'Feature',
-        properties: { area: a, name: BOUNDARIES[a].name },
-        geometry: BOUNDARIES[a].geometry,
+        properties: { area: a, name: DRAWABLE[a].name },
+        geometry: DRAWABLE[a].geometry,
       })),
   }
 }

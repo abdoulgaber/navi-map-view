@@ -62,23 +62,18 @@ function drawSelectedArea(map, geojson) {
   const src = map.getSource(AREA_SRC)
   if (src) { src.setData(data); return }
   map.addSource(AREA_SRC, { type: 'geojson', data })
-  map.addLayer({
-    id: 'area-fill',
-    type: 'fill',
-    source: AREA_SRC,
-    paint: { 'fill-color': '#4C64FF', 'fill-opacity': 0.12 },
-  })
+  // focused area: same outline treatment, a touch stronger
   map.addLayer({
     id: 'area-line',
     type: 'line',
     source: AREA_SRC,
-    paint: { 'line-color': '#4C64FF', 'line-width': 2.5, 'line-opacity': 0.9 },
+    layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#4C64FF', 'line-width': 3, 'line-opacity': 0.95 },
   })
 }
 
 function clearSelectedArea(map) {
   if (map.getLayer('area-line')) map.removeLayer('area-line')
-  if (map.getLayer('area-fill')) map.removeLayer('area-fill')
   if (map.getSource(AREA_SRC)) map.removeSource(AREA_SRC)
 }
 
@@ -140,23 +135,17 @@ function drawZoneAreas(map, zones) {
   const src = map.getSource(ZONES_SRC)
   if (src) { src.setData(data); return }
   map.addSource(ZONES_SRC, { type: 'geojson', data })
-  map.addLayer({
-    id: 'zone-fill',
-    type: 'fill',
-    source: ZONES_SRC,
-    paint: {
-      'fill-color': '#4C64FF',
-      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.10, 8, 0.14, 12, 0.08, 14, 0.04],
-    },
-  })
+  /* Outline only — no wash over the map, the way Google draws an
+     administrative boundary, in NAVI blue. */
   map.addLayer({
     id: 'zone-line',
     type: 'line',
     source: ZONES_SRC,
+    layout: { 'line-join': 'round' },
     paint: {
       'line-color': '#4C64FF',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1, 10, 1.5, 14, 2],
-      'line-opacity': 0.55,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.2, 10, 1.8, 14, 2.2],
+      'line-opacity': 0.75,
     },
   })
 }
@@ -454,7 +443,9 @@ export default function MapCanvas({
     const showPins = map.getZoom() >= PIN_ZOOM
 
     zoneMarkers.current.forEach(m => {
-      m.getElement().style.display = showPins ? 'none' : 'flex'
+      const el = m.getElement()
+      el.style.display = showPins ? 'none' : 'flex'
+      if (!showPins) el.style.visibility = ''   // re-measured by the repair pass
     })
 
     if (!showPins) {
@@ -528,7 +519,8 @@ export default function MapCanvas({
      screen and demote anything that still touches a neighbour. */
   const repairPass = () => {
     const map = mapRef.current
-    if (!map || map.getZoom() < PIN_ZOOM) return
+    if (!map) return
+    const pinsShown = map.getZoom() >= PIN_ZOOM
 
     /* Run after the browser has laid the markers out. rAF is the right
        signal, but it is throttled in background/embedded views — a timeout
@@ -537,6 +529,28 @@ export default function MapCanvas({
     const runRepair = () => {
       if (ran) return
       ran = true
+      /* Area badges: busiest areas win, any badge that would collide with
+         one already placed is hidden — the same breathing rule the project
+         chips follow, so the country view never stacks labels. */
+      const badges = zoneMarkers.current
+        .map(m => m.getElement())
+        .filter(el => el.style.display !== 'none')
+      if (badges.length) {
+        badges.forEach(el => { el.style.visibility = '' })
+        badges.sort((a, b) => Number(b.dataset.count || 0) - Number(a.dataset.count || 0))
+        const taken = []
+        for (const el of badges) {
+          const r = el.getBoundingClientRect()
+          const box = { x1: r.left - 4, y1: r.top - 4, x2: r.right + 4, y2: r.bottom + 4 }
+          const hits = taken.some(t =>
+            box.x1 < t.x2 && box.x2 > t.x1 && box.y1 < t.y2 && box.y2 > t.y1)
+          if (hits) el.style.visibility = 'hidden'
+          else taken.push(box)
+        }
+      }
+
+      if (!pinsShown) return   // badges handled above; no chips at this zoom
+
       /* Source markers from the LIVE DOM (not a cached order array, which
          can go stale between passes) and sort by the priority stamped on
          each element, so every rendered marker is always checked. */
@@ -627,6 +641,7 @@ export default function MapCanvas({
       el.className = 'zone-badge'
       el.type = 'button'
       el.innerHTML = `<strong>${zone.count}</strong><span>${zone.area}</span>`
+      el.dataset.count = zone.count
       el.addEventListener('click', () => callbacksRef.current.onSelectArea(zone.area))
       zoneMarkers.current.push(
         new Marker({ element: el }).setLngLat([zone.lng, zone.lat]).addTo(map)

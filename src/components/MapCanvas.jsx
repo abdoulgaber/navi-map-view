@@ -501,8 +501,11 @@ export default function MapCanvas({
 
     zoneMarkers.current.forEach(m => {
       const el = m.getElement()
-      // no chips over the opening flight — they appear once it lands
-      el.style.display = (!introDoneRef.current || showPins) ? 'none' : 'flex'
+      /* No chips over the opening flight: they appear once the intro is
+         done AND the camera has actually left globe scale — at globe zoom
+         every area lands on the same few pixels anyway. */
+      const landed = introDoneRef.current && map.getZoom() > GLOBE_VIEW.zoom + 1.5
+      el.style.display = (!landed || showPins) ? 'none' : 'flex'
     })
 
     if (!showPins) {

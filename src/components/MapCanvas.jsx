@@ -375,6 +375,10 @@ export default function MapCanvas({
     })
     map.on('movestart', hideHoverCard)
     map.on('moveend', () => { syncLayers(); repairPass() })
+    /* 'idle' is the only signal that the camera has settled AND every
+       marker has been positioned — decluttering before that measures
+       stale positions and can hide labels that do not actually collide. */
+    map.on('idle', () => { syncLayers(); repairPass() })
 
     /* Recover from a zero-sized container. MapLibre drops camera commands
        while it has no box, so the intro (or an area fit) can be lost; when
